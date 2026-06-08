@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(firebase --version)",
+      "Bash(firebase login:list)",
+      "Bash(firebase projects:list)"
+    ]
+  }
+}

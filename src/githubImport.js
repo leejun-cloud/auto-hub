@@ -115,89 +115,29 @@ function titleCase(repoName) {
 }
 
 // 메인: GitHub URL → 상품 폼 데이터
+// 비공개 저장소 지원을 위해 서버리스 함수(/api/github-import)를 통해 토큰 인증으로 조회한다.
+// (이전: 클라이언트에서 직접 공개 API 호출 → 비공개 저장소는 404)
 export async function importFromGithub(input) {
-  const { owner, repo, branch: urlBranch } = parseGithubUrl(input);
+  // 입력 형식은 사전에 클라이언트에서 한 번 검증해 빠른 피드백을 준다.
+  parseGithubUrl(input);
 
-  const meta = await ghFetch(`/repos/${owner}/${repo}`);
-  const branch = urlBranch || meta.default_branch || "main";
+  const res = await fetch("/api/github-import", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ input }),
+  });
 
-  // README (실패해도 진행)
-  let readmeMd = "";
-  try {
-    readmeMd = await ghFetch(`/repos/${owner}/${repo}/readme`, { raw: true });
-  } catch {
-    /* README 없음 — 빈 문자열로 진행 */
+  if (res.status === 404) {
+    throw new Error(
+      "가져오기 백엔드(/api/github-import)가 아직 배포되지 않았습니다. Vercel 서버리스 함수 배포가 필요합니다."
+    );
   }
-  const { intro, features } = distillReadme(readmeMd);
-
-  // 최신 릴리스 → 버전 (없으면 태그, 그것도 없으면 기본값)
-  let version = "v1.0.0";
-  try {
-    const rel = await ghFetch(`/repos/${owner}/${repo}/releases/latest`);
-    if (rel && rel.tag_name) version = rel.tag_name;
-  } catch {
-    /* 릴리스 없음 */
+  if (!res.ok) {
+    let msg = `가져오기 실패 (${res.status})`;
+    try { msg = (await res.json()).error || msg; } catch { /* noop */ }
+    throw new Error(msg);
   }
-
-  const topics = Array.isArray(meta.topics) ? meta.topics : [];
-  const language = meta.language || "";
-  const platform = LANG_PLATFORM[language] || "Cross-platform";
-
-  const title = titleCase(repo);
-  const baseDesc = meta.description ? meta.description.trim() : "";
-  const descParts = [];
-  if (baseDesc) descParts.push(baseDesc);
-  if (intro && intro !== baseDesc) descParts.push(intro);
-  descParts.push(
-    `GitHub 저장소 ${owner}/${repo}를 기반으로 한 프리미엄 소스코드 패키지입니다. ` +
-      `구매 즉시 전체 소스를 ZIP으로 내려받아 바로 활용할 수 있습니다.`
-  );
-  const desc = descParts.join(" ");
-
-  const zipUrl = `https://github.com/${owner}/${repo}/archive/refs/heads/${branch}.zip`;
-
-  const tags = [...new Set([language, ...topics].filter(Boolean))].slice(0, 6);
-  if (tags.length === 0) tags.push("오픈소스", "소스코드");
-
-  const finalFeatures =
-    features.length > 0
-      ? features
-      : [
-          "전체 소스코드 ZIP 패키지 제공",
-          "즉시 다운로드 및 상업적 활용 가능",
-          `${language || "멀티"} 기반 구현`,
-        ];
-
-  return {
-    id: `gh-${owner}-${repo}`.toLowerCase().replace(/[^a-z0-9-]/g, "-"),
-    title,
-    title_en: title,
-    type: "소스코드",
-    price: 49,
-    version,
-    platform,
-    icon: "code",
-    image:
-      meta.owner && meta.owner.avatar_url
-        ? meta.owner.avatar_url
-        : "https://images.unsplash.com/photo-1542831371-29b0f74f9713?auto=format&fit=crop&w=800&q=80",
-    desc,
-    desc_ko: desc,
-    features: finalFeatures,
-    specs: {
-      저장소: `${owner}/${repo}`,
-      "주 언어": language || "다양",
-      "기본 브랜치": branch,
-      "스타 수": String(meta.stargazers_count ?? 0),
-      라이선스: (meta.license && meta.license.spdx_id) || "미지정",
-      "최종 업데이트": meta.pushed_at ? meta.pushed_at.slice(0, 10) : "-",
-    },
-    tags,
-    githubUrl: meta.html_url,
-    zipUrl,
-    filePath: zipUrl,
-    sourceType: "github",
-  };
+  return res.json();
 }
 
 // AI 다듬기 — 백엔드(서버리스 함수)가 있으면 호출, 없으면 명확히 알림.

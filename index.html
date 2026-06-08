@@ -8,6 +8,77 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <script>
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "surface-tint": "#005bc1",
+              "surface-dim": "#dcd9dc",
+              "tertiary": "#9e3d00",
+              "surface-container": "#f0edef",
+              "secondary-container": "#dff5e4",
+              "on-surface-variant": "#414755",
+              "surface-container-highest": "#e4e2e4",
+              "surface-bright": "#fcf8fb",
+              "secondary": "#0e9f57",
+              "on-secondary-container": "#00521f",
+              "on-tertiary": "#ffffff",
+              "on-error": "#ffffff",
+              "on-primary": "#ffffff",
+              "outline-variant": "#c1c6d7",
+              "primary": "#0058bc",
+              "inverse-on-surface": "#f3f0f2",
+              "background": "#fcfbff",
+              "error-container": "#ffdad6",
+              "error": "#ba1a1a",
+              "surface-container-high": "#eae7ea",
+              "inverse-surface": "#16181c",
+              "inverse-primary": "#adc6ff",
+              "surface-container-low": "#f6f3f5",
+              "on-primary-container": "#001a41",
+              "on-tertiary-container": "#351000",
+              "surface": "#fcfbff",
+              "tertiary-container": "#ffdbcc",
+              "primary-fixed": "#d8e2ff",
+              "surface-variant": "#e4e2e4",
+              "outline": "#717786",
+              "on-surface": "#1b1b1d",
+              "primary-container": "#dbe7ff",
+              "on-secondary": "#ffffff",
+              "surface-container-lowest": "#ffffff",
+              "on-background": "#1b1b1d"
+            },
+            borderRadius: { DEFAULT: "0.25rem", lg: "0.5rem", xl: "0.75rem", full: "9999px" },
+            spacing: {
+              "section-gap": "80px",
+              "base": "8px",
+              "container-max": "1200px",
+              "margin-desktop": "40px",
+              "gutter": "24px",
+              "margin-mobile": "20px"
+            },
+            maxWidth: { "container-max": "1200px" },
+            fontFamily: {
+              "headline-md": ["Inter"], "label-sm": ["Inter"], "label-md": ["Inter"],
+              "headline-lg": ["Inter"], "body-lg": ["Inter"], "display-lg": ["Inter"],
+              "headline-lg-mobile": ["Inter"], "body-md": ["Inter"]
+            },
+            fontSize: {
+              "headline-md": ["24px", { lineHeight: "32px", letterSpacing: "-0.019em", fontWeight: "600" }],
+              "label-sm": ["12px", { lineHeight: "16px", letterSpacing: "0.01em", fontWeight: "600" }],
+              "label-md": ["14px", { lineHeight: "20px", letterSpacing: "0em", fontWeight: "500" }],
+              "headline-lg": ["32px", { lineHeight: "40px", letterSpacing: "-0.021em", fontWeight: "600" }],
+              "body-lg": ["19px", { lineHeight: "28px", letterSpacing: "-0.011em", fontWeight: "400" }],
+              "display-lg": ["48px", { lineHeight: "56px", letterSpacing: "-0.022em", fontWeight: "700" }],
+              "headline-lg-mobile": ["28px", { lineHeight: "34px", letterSpacing: "-0.018em", fontWeight: "600" }],
+              "body-md": ["16px", { lineHeight: "24px", letterSpacing: "-0.006em", fontWeight: "400" }]
+            }
+          }
+        }
+      };
+    </script>
   </head>
   <body>
     <div id="root"></div>

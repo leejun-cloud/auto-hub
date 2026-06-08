@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db, storage } from './firebase';
+import { db, storage, auth } from './firebase';
 import { collection, getDocs, doc, query, where } from 'firebase/firestore';
 import { ref, getDownloadURL } from 'firebase/storage';
 import { useAuth } from './AuthContext';
@@ -115,9 +115,39 @@ export default function MyPage() {
     fetchLibrary();
   }, [user]);
 
-  const handleDownload = async (productId, title, zipUrl) => {
+  const handleDownload = async (item, title) => {
+    const productId = item.id;
+    const zipUrl = item.zipUrl;
     showToast(`"${title}" 다운로드 준비 중...`, "info");
-    // GitHub로 등록된 상품은 실제 archive ZIP 링크를 바로 사용
+
+    // 비공개 저장소 상품(Storage 보관): 구매/보유 검증 후 서명 URL로 다운로드
+    if (item.downloadType === "storage" || item.storagePath) {
+      try {
+        if (!auth.currentUser) {
+          showToast("다운로드하려면 로그인이 필요합니다.", "error");
+          return;
+        }
+        const idToken = await auth.currentUser.getIdToken();
+        const res = await fetch("/api/download", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ idToken, productId }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          showToast(data.error || `다운로드 실패 (${res.status})`, "error");
+          return;
+        }
+        window.location.href = data.url;
+        showToast(`"${title}" 다운로드를 시작합니다.`, "success");
+      } catch (err) {
+        console.error(err);
+        showToast("다운로드 처리 중 오류가 발생했습니다.", "error");
+      }
+      return;
+    }
+
+    // 공개 GitHub 상품: 실제 archive ZIP 링크를 바로 사용
     if (zipUrl) {
       const link = document.createElement("a");
       link.href = zipUrl;
@@ -248,7 +278,7 @@ export default function MyPage() {
                         에이전트 실행
                       </button>
                     )}
-                    <button onClick={() => handleDownload(item.id, localizedTitle, item.zipUrl)} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-primary text-on-primary px-6 py-3 rounded-[12px] font-label-md text-label-md hover:opacity-90 active:scale-95 transition-all btn-animate">
+                    <button onClick={() => handleDownload(item, localizedTitle)} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-primary text-on-primary px-6 py-3 rounded-[12px] font-label-md text-label-md hover:opacity-90 active:scale-95 transition-all btn-animate">
                       <span className="material-symbols-outlined text-[20px]">download</span>
                       Download
                     </button>

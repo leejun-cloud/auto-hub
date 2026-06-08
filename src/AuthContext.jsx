@@ -28,20 +28,8 @@ export const AuthProvider = ({ children }) => {
           role: firebaseUser.email === 'duoenjia8@gmail.com' ? 'admin' : 'user'
         });
       } else {
-        const savedMock = localStorage.getItem('autohub_mock_user');
-        if (savedMock) {
-          setUser(JSON.parse(savedMock));
-        } else {
-          // Pre-populate with a default mock admin user to make testing effortless
-          const defaultMock = {
-            uid: "demo-user-123",
-            email: "duoenjia8@gmail.com",
-            displayName: "Demo Admin",
-            role: "admin"
-          };
-          setUser(defaultMock);
-          localStorage.setItem('autohub_mock_user', JSON.stringify(defaultMock));
-        }
+        // 실제 로그인만 사용 (mock 자동 관리자 세션 제거)
+        setUser(null);
       }
       setLoading(false);
     });
@@ -50,55 +38,17 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const loginWithEmail = async (email, password) => {
-    try {
-      return await signInWithEmailAndPassword(auth, email, password);
-    } catch (err) {
-      console.warn("Firebase Auth failed, falling back to mock login.", err);
-      const mockUser = {
-        uid: "demo-user-123",
-        email: email,
-        displayName: email.split('@')[0],
-        role: email === 'duoenjia8@gmail.com' ? 'admin' : 'user'
-      };
-      setUser(mockUser);
-      localStorage.setItem('autohub_mock_user', JSON.stringify(mockUser));
-      return { user: mockUser };
-    }
+    // 실제 Firebase 인증만 사용. 실패 시 호출부에서 에러를 처리한다.
+    return signInWithEmailAndPassword(auth, email, password);
   };
 
   const registerWithEmail = async (email, password) => {
-    try {
-      return await createUserWithEmailAndPassword(auth, email, password);
-    } catch (err) {
-      console.warn("Firebase Auth failed, falling back to mock registration.", err);
-      const mockUser = {
-        uid: "demo-user-123",
-        email: email,
-        displayName: email.split('@')[0],
-        role: email === 'duoenjia8@gmail.com' ? 'admin' : 'user'
-      };
-      setUser(mockUser);
-      localStorage.setItem('autohub_mock_user', JSON.stringify(mockUser));
-      return { user: mockUser };
-    }
+    return createUserWithEmailAndPassword(auth, email, password);
   };
 
   const loginWithGoogle = async () => {
-    try {
-      const provider = new GoogleAuthProvider();
-      return await signInWithPopup(auth, provider);
-    } catch (err) {
-      console.warn("Firebase Google Auth failed, falling back to mock Google login.", err);
-      const mockUser = {
-        uid: "demo-user-123",
-        email: "duoenjia8@gmail.com",
-        displayName: "Google Demo Admin",
-        role: "admin"
-      };
-      setUser(mockUser);
-      localStorage.setItem('autohub_mock_user', JSON.stringify(mockUser));
-      return { user: mockUser };
-    }
+    const provider = new GoogleAuthProvider();
+    return signInWithPopup(auth, provider);
   };
 
   const logout = async () => {
