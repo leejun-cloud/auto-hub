@@ -216,59 +216,50 @@ export default function Detail() {
     setScriptGenerated(false);
   }, [productId]);
 
+  // Checkout modal state
+  const [showCheckoutModal, setShowCheckoutModal] = useState(false);
+  const [checkoutProcessing, setCheckoutProcessing] = useState(false);
+
   const handleCheckout = async () => {
+    const isFree = product.price === 0;
+    if (isFree) {
+      await processPayment("Free Promo");
+    } else {
+      setShowCheckoutModal(true);
+    }
+  };
+
+  const processPayment = async (method) => {
     const user = auth.currentUser;
     const userUid = user ? user.uid : "demo-user-123";
-    const isFree = product.price === 0;
+    setCheckoutProcessing(true);
 
     try {
-      if (isFree) {
-        try {
-          await withTimeout(addDoc(collection(db, "libraries"), {
-            userId: userUid,
-            productId: product.id,
-            method: "Free Promo",
-            unlockedAt: new Date()
-          }));
-        } catch (dbErr) {
-          const localLibs = JSON.parse(localStorage.getItem("autohub_libraries") || "[]");
-          localLibs.push({
-            userId: userUid,
-            productId: product.id,
-            method: "Free Promo",
-            unlockedAt: new Date().toISOString()
-          });
-          localStorage.setItem("autohub_libraries", JSON.stringify(localLibs));
-        }
-        showToast("라이브러리에 추가되었습니다!", "success");
-        setIsOwned(true);
-      } else {
-        const tossCheckout = confirm("결제를 진행하시겠습니까? (토스페이먼츠 시뮬레이션)");
-        if (tossCheckout) {
-          try {
-            await withTimeout(addDoc(collection(db, "libraries"), {
-              userId: userUid,
-              productId: product.id,
-              method: "Paid",
-              unlockedAt: new Date()
-            }));
-          } catch (dbErr) {
-            const localLibs = JSON.parse(localStorage.getItem("autohub_libraries") || "[]");
-            localLibs.push({
-              userId: userUid,
-              productId: product.id,
-              method: "Paid",
-              unlockedAt: new Date().toISOString()
-            });
-            localStorage.setItem("autohub_libraries", JSON.stringify(localLibs));
-          }
-          showToast(t.paymentSuccess, "success");
-          setIsOwned(true);
-        }
+      try {
+        await withTimeout(addDoc(collection(db, "libraries"), {
+          userId: userUid,
+          productId: product.id,
+          method: method,
+          unlockedAt: new Date()
+        }));
+      } catch (dbErr) {
+        const localLibs = JSON.parse(localStorage.getItem("autohub_libraries") || "[]");
+        localLibs.push({
+          userId: userUid,
+          productId: product.id,
+          method: method,
+          unlockedAt: new Date().toISOString()
+        });
+        localStorage.setItem("autohub_libraries", JSON.stringify(localLibs));
       }
+      showToast(method === "Free Promo" ? "라이브러리에 추가되었습니다!" : t.paymentSuccess, "success");
+      setIsOwned(true);
+      setShowCheckoutModal(false);
     } catch (err) {
       console.error(err);
       showToast("오류가 발생했습니다.", "error");
+    } finally {
+      setCheckoutProcessing(false);
     }
   };
 
@@ -548,13 +539,187 @@ rm -f $BACKUP_FILE
         { q: "백업 진행 시 사이트 속도가 느려지거나 멈추지 않나요?", a: "기본 제공 옵션에 `--single-transaction` 및 `--quick` 파라미터가 들어가 있어 테이블에 긴 대기 락을 걸지 않고 메모리 스트리밍으로 동작하므로, 접속 중인 유저의 체감 성능 영향은 거의 없습니다." },
         { q: "AWS S3 외에 다른 클라우드 스토리지에도 연동이 되나요?", a: "네, rclone 혹은 firebase storage CLI로 경로를 소폭 치환해 주면 GCP Cloud Storage, Azure Blob, 네이버 Object Storage 등 모든 S3 호환 Object Storage에 완벽 연동됩니다." }
       ]
+    },
+    "excel-automation": {
+      eyebrow: "PRODUCTIVITY · PYTHON SCRIPT · REPORTING",
+      heroHeadline: "CSV 하나 던지면 끝.<br/>차트, 피벗, 서식까지 포함한<br/><span class='text-[#0CA678]'>완벽한 엑셀 보고서가 즉시.</span>",
+      heroDesc: "매주 반복되는 엑셀 리포트 작성에 지치셨나요? 원본 CSV/JSON 데이터만 넣으면 사전 정의 템플릿에 맞춰 차트, 피벗 테이블, 조건부 서식까지 완벽한 종합 보고서를 한 번의 실행으로 자동 생성합니다.",
+      situationDesc: "매주 월요일 아침, 지난주 실적 데이터를 엑셀에 옮겨 붙이고, 차트를 그리고, 서식을 맞추고, 상사에게 보내는 반복 작업에 2~3시간을 소모하고 계시진 않나요? 수작업으로 복사-붙여넣기를 하다 보면 셀 참조 오류나 수식 꼬임으로 잘못된 수치가 보고되는 위험도 항상 도사리고 있습니다.",
+      solutionTitle: "데이터 입력부터 서식 적용, 차트 삽입까지 원클릭 자동화합니다.",
+      solutionDesc: "Python openpyxl과 pandas 라이브러리를 활용해 10만 행 이상의 데이터도 8초 내에 정교한 보고서로 변환합니다.",
+      benefits: [
+        { title: "템플릿 기반 자동 포매팅", desc: "사전 정의된 엑셀 양식에 데이터를 자동 매핑하여 매번 동일한 품질의 보고서를 보장합니다." },
+        { title: "차트 및 피벗 테이블 자동 생성", desc: "데이터 유형에 맞는 최적의 차트 형태를 자동 선택하고, 핵심 KPI를 피벗 테이블로 요약합니다." },
+        { title: "이메일 자동 첨부 발송", desc: "생성된 보고서를 지정 수신자에게 SMTP로 즉시 발송하여, 별도 메일 작성 없이 리포팅을 완료합니다." }
+      ],
+      parts: [
+        { label: "DATA PARSER", title: "데이터 파싱 엔진", desc: "CSV, JSON, TSV 등 다양한 입력 포맷을 자동 감지하고 pandas DataFrame으로 정규화합니다." },
+        { label: "REPORT BUILDER", title: "리포트 빌더", desc: "openpyxl로 셀 서식, 조건부 서식, 차트 오브젝트를 프로그래밍 방식으로 삽입하는 빌더 모듈입니다." }
+      ],
+      steps: [
+        { title: "데이터 파일 준비", desc: "CSV, JSON, TSV 형식의 원본 데이터 파일을 준비합니다." },
+        { title: "템플릿 설정", desc: "사용할 엑셀 양식 템플릿을 선택하거나 기본 양식을 사용합니다." },
+        { title: "스크립트 실행", desc: "python report_gen.py data.csv 명령으로 리포트를 생성합니다." },
+        { title: "결과 확인 및 발송", desc: "생성된 XLSX 파일을 확인하고 이메일 자동 발송을 설정합니다." }
+      ],
+      faqs: [
+        { q: "대용량 데이터도 처리 가능한가요?", a: "네, pandas 기반이므로 수십만 행의 데이터도 안정적으로 처리합니다. 10만 행 기준 약 8초 내에 완성됩니다." },
+        { q: "기존 엑셀 양식을 그대로 사용할 수 있나요?", a: "네, 기존 XLSX 템플릿 파일을 지정하면 해당 양식의 셀 위치와 서식을 유지한 채 데이터만 자동 주입합니다." }
+      ]
+    },
+    "sns-manager": {
+      eyebrow: "SOCIAL MEDIA · AI AGENT · SCHEDULING",
+      heroHeadline: "4대 SNS 채널을<br/>하나의 에이전트로 관리하고<br/><span class='text-[#0CA678]'>예약 포스팅까지 완전 자동화.</span>",
+      heroDesc: "인스타그램, 페이스북, X(트위터), 링크드인까지 각각 로그인하고 글을 올리느라 하루가 부족했던 마케팅 담당자를 위해 탄생한 올인원 소셜 미디어 관리 에이전트입니다.",
+      situationDesc: "여러 SNS 계정에 동시에 포스팅을 해야 하는데, 각 플랫폼마다 이미지 규격과 글자 제한이 달라 매번 별도 작업이 필요합니다. 최적의 포스팅 시간대도 플랫폼마다 다르니, 일일이 예약 설정을 하다 보면 정작 콘텐츠 기획에 쓸 시간이 부족해지고 있진 않으신가요?",
+      solutionTitle: "한 번의 콘텐츠 작성으로 4대 SNS에 동시 발행합니다.",
+      solutionDesc: "각 플랫폼의 이미지 규격에 맞는 자동 리사이징, 최적 시간대 예약, 해시태그 트렌드 분석까지 원스톱으로 처리합니다.",
+      benefits: [
+        { title: "4대 플랫폼 동시 포스팅", desc: "Instagram, Facebook, X, LinkedIn에 한 번의 작성으로 동시에 콘텐츠를 발행합니다." },
+        { title: "이미지 자동 최적화", desc: "Sharp.js 기반으로 각 플랫폼 규격에 맞게 이미지를 자동 리사이징하고 크롭합니다." },
+        { title: "인게이지먼트 분석 대시보드", desc: "좋아요, 공유, 댓글 등 반응 지표를 일별/주별로 시각화하여 콘텐츠 전략을 데이터로 뒷받침합니다." }
+      ],
+      parts: [
+        { label: "CONTENT DISTRIBUTOR", title: "콘텐츠 배포 엔진", desc: "각 SNS 플랫폼의 공식 API를 통해 인증, 미디어 업로드, 게시물 발행을 일괄 처리하는 허브 모듈입니다." },
+        { label: "ANALYTICS ENGINE", title: "성과 분석 모듈", desc: "포스팅별 인게이지먼트 데이터를 수집하고 트렌드 차트로 시각화하여 최적 전략을 도출합니다." }
+      ],
+      steps: [
+        { title: "SNS 계정 연동", desc: "사용할 SNS 플랫폼의 계정을 OAuth로 안전하게 연결합니다." },
+        { title: "콘텐츠 작성", desc: "텍스트와 이미지를 한 번 작성하면 각 플랫폼에 맞게 자동 변환됩니다." },
+        { title: "예약 발행 설정", desc: "AI가 추천하는 최적 시간대에 예약 포스팅을 설정합니다." },
+        { title: "성과 모니터링", desc: "대시보드에서 실시간 인게이지먼트 지표를 확인합니다." }
+      ],
+      faqs: [
+        { q: "SNS 계정 보안은 안전한가요?", a: "모든 계정 연동은 각 플랫폼의 공식 OAuth 2.0 프로토콜을 사용하며, 비밀번호를 저장하지 않습니다. 토큰은 암호화 저장됩니다." },
+        { q: "무료 플랜과 유료 플랜의 차이점이 뭔가요?", a: "유료 구독 시 무제한 예약 포스팅, 심화 분석 대시보드, AI 캡션 자동 생성 기능이 활성화됩니다." }
+      ]
+    },
+    "cloud-monitor": {
+      eyebrow: "DEVOPS · REACT DASHBOARD · REAL-TIME",
+      heroHeadline: "서버 다운을 사전에 감지.<br/>멀티 클라우드 인프라를<br/><span class='text-[#0CA678]'>실시간으로 한눈에 모니터링.</span>",
+      heroDesc: "AWS, GCP, Azure 등 흩어져 있는 클라우드 자원을 하나의 대시보드에서 실시간으로 모니터링합니다. CPU, 메모리, 네트워크 트래픽 지표를 5초 주기로 갱신하고, 임계값 초과 시 즉각 알림을 발송합니다.",
+      situationDesc: "AWS Console, GCP Console, Azure Portal을 번갈아 열어 각각의 서버 상태를 확인하느라 비효율적인 시간을 보내고 계시진 않나요? 새벽에 서버가 다운됐는데, 아침에 출근해서야 알게 되는 악몽 같은 경험은 없으셨나요?",
+      solutionTitle: "5초 주기 실시간 갱신으로 장애를 사전에 감지합니다.",
+      solutionDesc: "WebSocket 기반 실시간 데이터 스트리밍과 Recharts 시각화로, 인프라 전체 건강 상태를 직관적으로 파악할 수 있습니다.",
+      benefits: [
+        { title: "멀티 클라우드 통합 뷰", desc: "AWS, GCP, Azure의 모든 서버 자원을 하나의 통합 대시보드에서 실시간으로 확인합니다." },
+        { title: "임계값 알림 자동 발송", desc: "CPU 80% 초과, 메모리 90% 초과 등 사전 설정한 임계값에 도달하면 이메일·Slack·PagerDuty로 즉시 알립니다." },
+        { title: "반응형 모바일 대시보드", desc: "출퇴근 중에도 모바일 브라우저에서 서버 상태를 실시간으로 확인할 수 있는 반응형 UI를 제공합니다." }
+      ],
+      parts: [
+        { label: "DATA COLLECTOR", title: "메트릭 수집기", desc: "각 클라우드 프로바이더의 API를 통해 서버 메트릭(CPU, Memory, Disk, Network)을 5초 주기로 폴링합니다." },
+        { label: "ALERT ENGINE", title: "알림 디스패처", desc: "임계값 초과 이벤트를 감지하면 설정된 채널(이메일, Slack, PagerDuty)로 즉각 알림을 전파합니다." }
+      ],
+      steps: [
+        { title: "클라우드 API 키 설정", desc: "모니터링할 클라우드 계정의 API 키/시크릿을 환경변수에 설정합니다." },
+        { title: "대시보드 구동", desc: "npm install && npm run dev로 로컬 대시보드를 실행합니다." },
+        { title: "알림 채널 설정", desc: "Slack Webhook URL, 이메일 주소 등 알림 수신 채널을 설정합니다." },
+        { title: "실시간 모니터링 시작", desc: "대시보드에서 서버 상태를 실시간으로 확인하고 이상 징후를 감지합니다." }
+      ],
+      faqs: [
+        { q: "어떤 클라우드 프로바이더를 지원하나요?", a: "AWS (CloudWatch), GCP (Cloud Monitoring), Azure (Monitor)의 주요 메트릭을 모두 지원합니다. 커스텀 프로바이더 추가도 가능합니다." },
+        { q: "서버가 많아도 성능 문제는 없나요?", a: "WebSocket 기반 이벤트 드리븐 아키텍처로 설계되어 100대 이상의 서버도 안정적으로 모니터링합니다." }
+      ]
     }
   };
 
+  // Loading & null guard
+  if (loading || !product) {
+    return (
+      <main className="bg-[#FAF9F5] w-full min-h-screen flex items-center justify-center font-sans">
+        <div className="text-center space-y-4">
+          <span className="material-symbols-outlined text-[48px] text-[#0CA678] animate-spin">sync</span>
+          <p className="text-sm font-bold text-[#8B928E]">상품 정보를 불러오는 중...</p>
+        </div>
+      </main>
+    );
+  }
+
   const info = narratives[product.id] || narratives["ai-documenter"];
+  const isFree = product.price === 0;
 
   return (
     <main className="bg-[#FAF9F5] w-full font-sans text-[#0A0F0D] antialiased">
+      {/* Checkout Modal */}
+      {showCheckoutModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" onClick={() => setShowCheckoutModal(false)}>
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+          <div 
+            className="relative bg-white rounded-[20px] w-full max-w-[480px] overflow-hidden shadow-2xl animate-fadeIn"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-[#0CA678] to-[#0CA678]/80 px-8 py-6 text-white">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="material-symbols-outlined text-[28px]">credit_card</span>
+                  <div>
+                    <h3 className="font-bold text-lg">결제 확인</h3>
+                    <p className="text-white/70 text-xs">토스페이먼츠 시뮬레이션</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowCheckoutModal(false)} className="text-white/60 hover:text-white transition-colors">
+                  <span className="material-symbols-outlined">close</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div className="px-8 py-6 space-y-6">
+              <div className="flex items-center gap-4 p-4 bg-[#FAF9F5] rounded-xl border border-[#EAE6DE]">
+                <img src={product.image} alt={product.title} className="w-16 h-16 rounded-lg object-cover" />
+                <div className="flex-grow">
+                  <h4 className="font-bold text-sm text-[#0A0F0D]">{product.title}</h4>
+                  <p className="text-xs text-[#8B928E] mt-0.5">{product.type} · {product.version}</p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex justify-between text-sm">
+                  <span className="text-[#6B6E70]">상품 금액</span>
+                  <span className="font-bold text-[#0A0F0D]">{formatPrice(product.price)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-[#6B6E70]">할인</span>
+                  <span className="text-[#0CA678] font-bold">- {formatPrice(0)}</span>
+                </div>
+                <div className="border-t border-[#EAE6DE] pt-3 flex justify-between text-base">
+                  <span className="font-bold text-[#0A0F0D]">총 결제 금액</span>
+                  <span className="font-extrabold text-[#0CA678] text-lg">{formatPrice(product.price)}</span>
+                </div>
+              </div>
+
+              <div className="bg-[#FAF9F5] rounded-xl p-4 border border-[#EAE6DE]">
+                <div className="flex items-center gap-2 text-xs text-[#8B928E]">
+                  <span className="material-symbols-outlined text-[16px] text-[#0CA678]">verified_user</span>
+                  결제 정보는 안전하게 암호화되어 처리됩니다.
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-8 py-5 bg-[#FAF9F5] border-t border-[#EAE6DE] flex gap-3">
+              <button 
+                onClick={() => setShowCheckoutModal(false)}
+                className="flex-1 py-3.5 rounded-xl border border-[#EAE6DE] bg-white text-sm font-bold text-[#6B6E70] hover:bg-[#F5F3EF] transition-colors"
+              >
+                취소
+              </button>
+              <button 
+                onClick={() => processPayment("Paid")}
+                disabled={checkoutProcessing}
+                className="flex-[2] py-3.5 rounded-xl bg-[#0CA678] text-white text-sm font-bold hover:opacity-90 active:scale-[0.98] transition-all flex items-center justify-center gap-2 shadow-lg disabled:opacity-60"
+              >
+                {checkoutProcessing ? (
+                  <><span className="material-symbols-outlined text-[18px] animate-spin">sync</span> 처리 중...</>
+                ) : (
+                  <><span className="material-symbols-outlined text-[18px]">lock</span> {formatPrice(product.price)} 결제하기</>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* ----------------------------------------------------
           Header Hero Section (Inspired by skills.ag)
           ---------------------------------------------------- */}
@@ -598,8 +763,8 @@ rm -f $BACKUP_FILE
                   onClick={handleCheckout} 
                   className="bg-[#0CA678] text-white font-bold px-8 py-4 rounded-xl shadow-lg hover:opacity-90 active:scale-95 transition-all text-sm flex items-center justify-center gap-2 btn-animate font-mono"
                 >
-                  <span className="material-symbols-outlined">{isFree ? 'download' : 'credit_card'}</span>
-                  {isFree ? "무료 다운로드하여 라이브러리 추가" : `구매하기 (${formatPrice(product.price)})`}
+                  <span className="material-symbols-outlined">{product.price === 0 ? 'download' : 'credit_card'}</span>
+                  {product.price === 0 ? "무료 다운로드하여 라이브러리 추가" : `구매하기 (${formatPrice(product.price)})`}
                 </button>
               )}
               
@@ -710,6 +875,71 @@ rm -f $BACKUP_FILE
           </div>
         </div>
       </section>
+
+      {/* ----------------------------------------------------
+          Tech Specs Section (Features + Specs + Tags)
+          ---------------------------------------------------- */}
+      {(product.features || product.specs || product.tags) && (
+        <section className="px-6 py-20 bg-[#F5F3EF]">
+          <div className="max-w-[760px] mx-auto">
+            <div className="text-center space-y-4 mb-12">
+              <div className="font-mono text-[11px] font-bold tracking-[0.2em] text-[#8B928E] uppercase">TECH SPECS</div>
+              <h2 className="font-extrabold text-[26px] md:text-[36px] tracking-tight text-[#0A0F0D]">
+                기술 사양 및 핵심 기능
+              </h2>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 text-left">
+              {/* Features List */}
+              {product.features && (
+                <div className="bg-white border border-[#EAE6DE] rounded-[14px] p-6 md:p-8 shadow-sm">
+                  <h3 className="font-bold text-[15px] text-[#0A0F0D] mb-4 flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[18px] text-[#0CA678]">check_circle</span>
+                    주요 기능
+                  </h3>
+                  <ul className="space-y-3">
+                    {product.features.map((feat, i) => (
+                      <li key={i} className="flex items-start gap-2.5 text-[13px] text-[#3F4A45]">
+                        <span className="font-mono text-[#0CA678] font-bold text-[11px] mt-0.5 shrink-0">✓</span>
+                        {feat}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Specs Table */}
+              {product.specs && (
+                <div className="bg-white border border-[#EAE6DE] rounded-[14px] p-6 md:p-8 shadow-sm">
+                  <h3 className="font-bold text-[15px] text-[#0A0F0D] mb-4 flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[18px] text-[#007aff]">settings</span>
+                    기술 명세
+                  </h3>
+                  <div className="space-y-0">
+                    {Object.entries(product.specs).map(([key, value], i) => (
+                      <div key={i} className={`flex justify-between py-3 text-[13px] ${i > 0 ? 'border-t border-[#EAE6DE]' : ''}`}>
+                        <span className="text-[#8B928E] font-medium">{key}</span>
+                        <span className="text-[#0A0F0D] font-bold text-right">{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Tags */}
+            {product.tags && (
+              <div className="flex flex-wrap gap-2 mt-8 justify-center">
+                {product.tags.map((tag, i) => (
+                  <span key={i} className="bg-white border border-[#EAE6DE] text-[12px] text-[#6B6E70] px-3 py-1.5 rounded-full font-medium hover:border-[#0CA678] hover:text-[#0CA678] transition-colors cursor-default">
+                    #{tag}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+      )}
 
       {/* ----------------------------------------------------
           Steps Section (Inspired by skills.ag)
@@ -1232,6 +1462,55 @@ $ npm run build`}
                     </button>
                   </div>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* ----------------------------------------------------
+              PLAYGROUND GENERIC: Products without specialized demo
+              ---------------------------------------------------- */}
+          {!["ai-documenter", "blog-writer", "database-backup"].includes(product.id) && (
+            <div className="border border-[#0CA678]/25 rounded-[20px] p-6 md:p-8 bg-[#FAF9F5] text-center shadow-sm">
+              <div className="max-w-[520px] mx-auto space-y-6">
+                <div className="w-20 h-20 rounded-2xl bg-white border border-[#EAE6DE] shadow-sm flex items-center justify-center mx-auto">
+                  <span className="material-symbols-outlined text-[36px] text-[#0CA678]">{product.icon}</span>
+                </div>
+                <div className="space-y-2">
+                  <h3 className="font-extrabold text-[20px] text-[#0A0F0D]">{product.title}</h3>
+                  <p className="text-[13px] text-[#6B6E70] leading-relaxed">{product.desc}</p>
+                </div>
+
+                {product.features && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left">
+                    {product.features.slice(0, 4).map((feat, i) => (
+                      <div key={i} className="bg-white border border-[#EAE6DE] rounded-xl p-3 flex items-start gap-2">
+                        <span className="material-symbols-outlined text-[16px] text-[#0CA678] mt-0.5 shrink-0">check_circle</span>
+                        <span className="text-[12px] text-[#3F4A45]">{feat}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex items-center justify-center gap-4 pt-2">
+                  <div className="text-center">
+                    <span className="block font-extrabold text-[24px] text-[#0CA678]">{product.version}</span>
+                    <span className="text-[10px] text-[#8B928E] uppercase font-bold">Latest Version</span>
+                  </div>
+                  <div className="w-px h-10 bg-[#EAE6DE]" />
+                  <div className="text-center">
+                    <span className="block font-extrabold text-[24px] text-[#0A0F0D]">{product.platform}</span>
+                    <span className="text-[10px] text-[#8B928E] uppercase font-bold">Platform</span>
+                  </div>
+                </div>
+
+                <button 
+                  onClick={handleCheckout}
+                  disabled={isOwned}
+                  className={`w-full max-w-sm mx-auto py-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all ${isOwned ? 'bg-[#0CA678]/10 border border-[#0CA678]/25 text-[#0CA678] cursor-default' : 'bg-[#0CA678] text-white hover:opacity-95 shadow-md active:scale-[0.98]'}`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">{isOwned ? 'check_circle' : (product.price === 0 ? 'download' : 'credit_card')}</span>
+                  {isOwned ? '소유 완료 · 라이브러리에서 확인' : (product.price === 0 ? '무료 다운로드' : `구매하기 (${formatPrice(product.price)})`)}
+                </button>
               </div>
             </div>
           )}

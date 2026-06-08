@@ -187,7 +187,7 @@ function ProductCard({ product, onCheckout, formatPrice, t, lang }) {
 
   return (
     <div 
-      onClick={() => product.id === 'blog-writer' && navigate(`/product/${product.id}`)}
+      onClick={() => navigate(`/product/${product.id}`)}
       className="product-card bg-surface-container-lowest border border-[#E5E5E7] rounded-[24px] p-6 premium-card-shadow flex flex-col group hover:border-primary/30 transition-all duration-300 premium-card-hover cursor-pointer"
     >
       <div className="relative rounded-[16px] overflow-hidden aspect-[4/3] mb-6">
