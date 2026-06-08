@@ -23,21 +23,31 @@ export default function Catalog() {
 
   useEffect(() => {
     const fetchCatalog = async () => {
+      // 기본 카탈로그를 베이스로 깔고, Firestore에서 등록/수정된 상품을 덮어쓰기로 병합한다.
+      // 이렇게 해야 관리자가 신규 상품을 추가해도 기본 상품들이 사라지지 않는다.
+      const merged = {};
+      DEFAULT_CATALOG.forEach((item) => {
+        merged[item.id] = item;
+      });
+
       try {
         const querySnapshot = await withTimeout(getDocs(collection(db, "catalog")));
-        const list = [];
         querySnapshot.forEach((doc) => {
-          list.push({ id: doc.id, ...doc.data() });
+          merged[doc.id] = { ...merged[doc.id], id: doc.id, ...doc.data() };
         });
-        if (list.length === 0) {
-          setCatalog(DEFAULT_CATALOG);
-        } else {
-          setCatalog(list);
-        }
       } catch (err) {
-        console.warn("Firestore get error (falling back to DEFAULT_CATALOG):", err);
-        setCatalog(DEFAULT_CATALOG);
+        console.warn("Firestore get error (using DEFAULT_CATALOG only):", err);
       }
+
+      // localStorage 폴백 저장본도 병합 (Firestore 쓰기 실패 시 대비)
+      try {
+        const localCustom = JSON.parse(localStorage.getItem("autohub_custom_catalog") || "{}");
+        Object.values(localCustom).forEach((item) => {
+          merged[item.id] = { ...merged[item.id], ...item };
+        });
+      } catch { /* ignore */ }
+
+      setCatalog(Object.values(merged));
     };
     fetchCatalog();
   }, []);

@@ -115,8 +115,21 @@ export default function MyPage() {
     fetchLibrary();
   }, [user]);
 
-  const handleDownload = async (productId, title) => {
+  const handleDownload = async (productId, title, zipUrl) => {
     showToast(`"${title}" 다운로드 준비 중...`, "info");
+    // GitHub로 등록된 상품은 실제 archive ZIP 링크를 바로 사용
+    if (zipUrl) {
+      const link = document.createElement("a");
+      link.href = zipUrl;
+      link.target = "_blank";
+      link.rel = "noreferrer";
+      link.download = `${productId}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      showToast(`"${title}" 다운로드를 시작합니다.`, "success");
+      return;
+    }
     try {
       const fileRef = ref(storage, `products/${productId}.zip`);
       const downloadUrl = await getDownloadURL(fileRef);
@@ -235,7 +248,7 @@ export default function MyPage() {
                         에이전트 실행
                       </button>
                     )}
-                    <button onClick={() => handleDownload(item.id, localizedTitle)} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-primary text-on-primary px-6 py-3 rounded-[12px] font-label-md text-label-md hover:opacity-90 active:scale-95 transition-all btn-animate">
+                    <button onClick={() => handleDownload(item.id, localizedTitle, item.zipUrl)} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-primary text-on-primary px-6 py-3 rounded-[12px] font-label-md text-label-md hover:opacity-90 active:scale-95 transition-all btn-animate">
                       <span className="material-symbols-outlined text-[20px]">download</span>
                       Download
                     </button>

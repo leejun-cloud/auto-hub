@@ -5,6 +5,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useAuth } from './AuthContext';
 import { useToast } from './ToastContext';
 import { DEFAULT_CATALOG } from './defaultCatalog';
+import { importFromGithub, polishWithAI, generateImageWithAI } from './githubImport';
 
 export default function Admin() {
   const { user } = useAuth();
@@ -22,6 +23,14 @@ export default function Admin() {
   const [icon, setIcon] = useState("auto_awesome");
   const [image, setImage] = useState("");
   const [desc, setDesc] = useState("");
+
+  // GitHub 가져오기 / 자동 글 작성 관련 상태
+  const [githubInput, setGithubInput] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [polishing, setPolishing] = useState(false);
+  const [generatingImage, setGeneratingImage] = useState(false);
+  // 폼에 직접 노출되지 않지만 함께 저장되어야 하는 부가 필드들
+  const [extra, setExtra] = useState({});
 
   const fetchCatalogList = async () => {
     let cat = {};
@@ -68,6 +77,18 @@ export default function Admin() {
     setIcon(product.icon);
     setImage(product.image || "");
     setDesc(product.desc);
+    setExtra({
+      features: product.features,
+      specs: product.specs,
+      tags: product.tags,
+      title_en: product.title_en,
+      desc_ko: product.desc_ko,
+      githubUrl: product.githubUrl,
+      zipUrl: product.zipUrl,
+      filePath: product.filePath,
+      sourceType: product.sourceType,
+    });
+    setGithubInput(product.githubUrl || "");
   };
 
   const prepareNewItem = () => {
@@ -81,6 +102,90 @@ export default function Admin() {
     setIcon("auto_awesome");
     setImage("https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80");
     setDesc("");
+    setExtra({});
+    setGithubInput("");
+  };
+
+  // GitHub URL → 상품 정보 자동 추출 후 폼 채우기
+  const handleGithubImport = async () => {
+    if (!githubInput.trim()) {
+      showToast("GitHub 저장소 주소를 입력해주세요.", "error");
+      return;
+    }
+    setImporting(true);
+    showToast("GitHub 저장소를 분석하는 중...", "info");
+    try {
+      const p = await importFromGithub(githubInput);
+      setId(p.id);
+      setTitle(p.title);
+      setType(p.type);
+      setPrice(String(p.price));
+      setVersion(p.version);
+      setPlatform(p.platform);
+      setIcon(p.icon);
+      setImage(p.image);
+      setDesc(p.desc);
+      setExtra({
+        features: p.features,
+        specs: p.specs,
+        tags: p.tags,
+        title_en: p.title_en,
+        desc_ko: p.desc_ko,
+        githubUrl: p.githubUrl,
+        zipUrl: p.zipUrl,
+        filePath: p.filePath,
+        sourceType: p.sourceType,
+      });
+      setActiveItem(null); // 신규 등록 흐름으로 취급
+      showToast("저장소 정보를 불러왔습니다. 내용 확인 후 저장하세요.", "success");
+    } catch (err) {
+      showToast(err.message || "GitHub 가져오기에 실패했습니다.", "error");
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  // 선택적 AI 다듬기 (백엔드 준비 시 동작)
+  const handlePolish = async () => {
+    setPolishing(true);
+    showToast("AI가 소개 문구를 다듬는 중...", "info");
+    try {
+      const result = await polishWithAI({
+        title,
+        desc,
+        features: extra.features,
+        githubUrl: extra.githubUrl,
+      });
+      if (result.title) setTitle(result.title);
+      if (result.desc) setDesc(result.desc);
+      if (result.features) setExtra((e) => ({ ...e, features: result.features }));
+      showToast("AI 다듬기가 완료되었습니다.", "success");
+    } catch (err) {
+      showToast(err.message || "AI 다듬기에 실패했습니다.", "error");
+    } finally {
+      setPolishing(false);
+    }
+  };
+
+  // AI 이미지 생성 (OpenAI gpt-image)
+  const handleGenerateImage = async () => {
+    if (!title.trim()) {
+      showToast("먼저 상품명을 입력하거나 GitHub에서 가져와주세요.", "error");
+      return;
+    }
+    setGeneratingImage(true);
+    showToast("AI가 상품 이미지를 생성하는 중... (수십 초 소요)", "info");
+    try {
+      const result = await generateImageWithAI({ title, desc });
+      if (result.image) {
+        setImage(result.image);
+        showToast("AI 이미지가 생성되었습니다.", "success");
+      }
+    } catch (err) {
+      showToast(err.message || "이미지 생성에 실패했습니다.", "error");
+    } finally {
+      setGeneratingImage(false);
+    }
   };
 
   const handleFormSubmit = async (e) => {
@@ -134,6 +239,17 @@ export default function Admin() {
       desc,
       lastSync: "Just now"
     };
+
+    // GitHub 가져오기 등으로 채워진 부가 필드 병합 (값이 있을 때만)
+    if (extra.features) productData.features = extra.features;
+    if (extra.specs) productData.specs = extra.specs;
+    if (extra.tags) productData.tags = extra.tags;
+    if (extra.title_en) productData.title_en = extra.title_en;
+    if (extra.desc_ko) productData.desc_ko = extra.desc_ko;
+    if (extra.githubUrl) productData.githubUrl = extra.githubUrl;
+    if (extra.zipUrl) productData.zipUrl = extra.zipUrl;
+    if (extra.filePath) productData.filePath = extra.filePath;
+    if (extra.sourceType) productData.sourceType = extra.sourceType;
 
     try {
       await setDoc(doc(db, "catalog", id), productData);
@@ -230,6 +346,52 @@ export default function Admin() {
           </h2>
           
           <form className="space-y-6" onSubmit={handleFormSubmit}>
+            {/* GitHub 저장소 자동 가져오기 (소스코드 등록용) */}
+            <div className="rounded-2xl border border-primary/30 bg-primary/5 p-5 space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary text-[22px]">code</span>
+                <h3 className="font-label-md font-bold text-on-surface">GitHub 저장소로 자동 등록</h3>
+              </div>
+              <p className="text-[12px] text-on-surface-variant">
+                저장소 주소를 입력하면 README·설명·언어·릴리스를 분석해 상품명/설명/기능/태그/버전을 자동 작성하고,
+                다운로드용 ZIP 링크(<code>archive/&#123;branch&#125;.zip</code>)를 연결합니다.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <input
+                  type="text"
+                  value={githubInput}
+                  onChange={(e) => setGithubInput(e.target.value)}
+                  placeholder="https://github.com/owner/repo  또는  owner/repo"
+                  className="flex-1 bg-surface-container-lowest border-none rounded-xl py-3 px-4 focus:ring-2 focus:ring-primary transition-all font-body-md"
+                />
+                <button
+                  type="button"
+                  onClick={handleGithubImport}
+                  disabled={importing}
+                  className="bg-primary text-on-primary font-label-md px-6 py-3 rounded-xl hover:opacity-90 transition-all btn-animate disabled:opacity-50 whitespace-nowrap flex items-center gap-1"
+                >
+                  <span className="material-symbols-outlined text-[18px]">{importing ? "hourglass_top" : "download"}</span>
+                  {importing ? "분석 중..." : "가져오기 + 자동 작성"}
+                </button>
+              </div>
+              {extra.zipUrl && (
+                <div className="flex flex-wrap items-center gap-3 pt-1">
+                  <a href={extra.zipUrl} target="_blank" rel="noreferrer" className="text-[12px] text-primary underline break-all">
+                    📦 {extra.zipUrl}
+                  </a>
+                  <button
+                    type="button"
+                    onClick={handlePolish}
+                    disabled={polishing}
+                    className="bg-secondary/15 text-secondary font-label-sm px-4 py-2 rounded-lg hover:bg-secondary/25 transition-all disabled:opacity-50 flex items-center gap-1"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">auto_fix_high</span>
+                    {polishing ? "다듬는 중..." : "AI로 문구 다듬기"}
+                  </button>
+                </div>
+              )}
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block font-label-md text-label-md mb-2 text-on-surface-variant">상품명 (Title)</label>
@@ -268,8 +430,22 @@ export default function Admin() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label className="block font-label-md text-label-md mb-2 text-on-surface-variant">상품 이미지 업로드 (Storage)</label>
+                <label className="block font-label-md text-label-md mb-2 text-on-surface-variant">상품 이미지 (업로드 또는 AI 생성)</label>
                 <input type="file" id="product-image-file" accept="image/*" className="w-full bg-surface-container-low border-none rounded-xl py-3 px-4 focus:ring-2 focus:ring-primary transition-all font-body-md" />
+                <div className="flex items-center gap-3 mt-2">
+                  <button
+                    type="button"
+                    onClick={handleGenerateImage}
+                    disabled={generatingImage}
+                    className="bg-secondary/15 text-secondary font-label-sm px-4 py-2 rounded-lg hover:bg-secondary/25 transition-all disabled:opacity-50 flex items-center gap-1"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">image</span>
+                    {generatingImage ? "생성 중..." : "AI로 이미지 생성"}
+                  </button>
+                  {image && (
+                    <img src={image} alt="미리보기" className="h-12 w-12 rounded-lg object-cover border border-outline-variant/40" />
+                  )}
+                </div>
               </div>
               <div>
                 <label className="block font-label-md text-label-md mb-2 text-on-surface-variant">원본 파일 업로드 (Zip 등)</label>
