@@ -1,0 +1,99 @@
+/* Global Style overrides and premium animations - skills.ag style */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap');
+
+:root {
+  --bg: #FFFFFF;
+  --surface: #F5F3EF;
+  --surface-2: #EAE6DE;
+  --ink: #0A0F0D;
+  --ink-soft: #3F4A45;
+  --ink-faint: #8B928E;
+  --border: rgba(12, 166, 120, 0.15);
+  --border-strong: rgba(12, 166, 120, 0.4);
+  --accent: #0CA678;
+  --accent-soft: rgba(12, 166, 120, 0.08);
+  --accent-strong: rgba(12, 166, 120, 0.35);
+  --accent-ink: #FFFFFF;
+  --accent-2: #FAB005;
+  --accent-2-soft: rgba(250, 176, 5, 0.12);
+  
+  --primary-color: #007aff;
+  --primary-hover: #0056b3;
+  --secondary-color: #34c759;
+  --neutral-color: #0a0f0d;
+  --background-color: #faf9f5;
+  --card-border: #eae6de;
+  --font-family: 'Inter', -apple-system, sans-serif;
+}
+
+body {
+  font-family: var(--font-family);
+  background-color: var(--background-color);
+  color: var(--ink);
+  overflow-x: hidden;
+}
+
+/* Custom styles matching skills.ag iframe elements */
+.eyebrow-accent {
+  display: inline-block;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.eyebrow-mono {
+  display: inline-block;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+/* Premium Card & Glassmorphism */
+.glass-card {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--card-border);
+  box-shadow: 0 4px 20px rgba(10, 15, 13, 0.03);
+}
+
+.premium-card-hover {
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.premium-card-hover:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 20px 40px rgba(10, 15, 13, 0.06);
+  border-color: var(--accent-strong) !important;
+}
+
+/* Micro-animations for buttons */
+.btn-animate {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.btn-animate:active {
+  transform: scale(0.97);
+}
+
+/* Smooth page load fade-in */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+main {
+  animation: fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}

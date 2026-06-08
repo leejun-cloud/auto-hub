@@ -1,0 +1,23 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 모든 사용자가 카탈로그 조회를 할 수 있도록 허용
+    match /catalog/{productId} {
+      allow read: if true;
+      // 어드민 사용자만 등록/수정/삭제 가능
+      allow write: if request.auth != null && (request.auth.token.admin == true || request.auth.token.email == 'duoenjia8@gmail.com');
+    }
+    
+    // 구매한 라이브러리는 소유자만 조회 가능
+    match /libraries/{libraryId} {
+      allow read: if request.auth != null && request.auth.uid == resource.data.userId;
+      // 일반 클라이언트 쓰기는 차단 (결제 완료 후 백엔드 서비스 또는 승인 토큰을 통해서만 생성)
+      allow write: if request.auth != null && request.resource.data.userId == request.auth.uid;
+    }
+    
+    // 사용자 정보
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}

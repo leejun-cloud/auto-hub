@@ -1,0 +1,16 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // 상품 카탈로그에 표시되는 이미지는 누구나 읽을 수 있음
+    match /catalog-images/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null && (request.auth.token.admin == true || request.auth.token.email == 'duoenjia8@gmail.com');
+    }
+    
+    // 실제 업로드 및 다운로드용 원본 제품 파일(zip, exe 등)은 비인증 다운로드 전면 차단
+    match /products/{allPaths=**} {
+      allow read: if false; // 직접적인 HTTP 다운로드 차단 (Cloud Function 임시 URL을 통해서만 허용)
+      allow write: if request.auth != null && (request.auth.token.admin == true || request.auth.token.email == 'duoenjia8@gmail.com');
+    }
+  }
+}
