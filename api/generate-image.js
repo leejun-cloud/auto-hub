@@ -1,6 +1,8 @@
 // Vercel Serverless Function: AI 상품 이미지 생성 (OpenAI gpt-image-1)
 // 클라이언트는 /api/generate-image 로 POST. OPENAI_API_KEY 는 환경변수로만 보관.
 
+import { friendlyOpenAiError } from "./_openaiError.js";
+
 const IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || "gpt-image-2";
 // 기본 품질 medium (≈ $0.053/장). OPENAI_IMAGE_QUALITY 로 low/high 조정 가능.
 const IMAGE_QUALITY = process.env.OPENAI_IMAGE_QUALITY || "medium";
@@ -45,7 +47,7 @@ export default async function handler(req, res) {
 
     if (!r.ok) {
       const errText = await r.text();
-      res.status(r.status).json({ error: `OpenAI 오류: ${errText.slice(0, 300)}` });
+      res.status(r.status).json({ error: friendlyOpenAiError(r.status, errText) });
       return;
     }
 

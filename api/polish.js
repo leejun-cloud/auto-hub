@@ -1,6 +1,8 @@
 // Vercel Serverless Function: AI 마케팅 문구 다듬기 (OpenAI gpt-5.4-mini)
 // 클라이언트는 /api/polish 로 POST 한다. OPENAI_API_KEY 는 Vercel 환경변수로만 보관.
 
+import { friendlyOpenAiError } from "./_openaiError.js";
+
 const TEXT_MODEL = process.env.OPENAI_TEXT_MODEL || "gpt-5.4-mini";
 
 export default async function handler(req, res) {
@@ -52,7 +54,7 @@ export default async function handler(req, res) {
 
     if (!r.ok) {
       const errText = await r.text();
-      res.status(r.status).json({ error: `OpenAI 오류: ${errText.slice(0, 300)}` });
+      res.status(r.status).json({ error: friendlyOpenAiError(r.status, errText) });
       return;
     }
 
