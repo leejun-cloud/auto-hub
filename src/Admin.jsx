@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { db, storage } from './firebase';
 import { collection, getDocs, setDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytes, uploadString, getDownloadURL } from 'firebase/storage';
 import { useAuth } from './AuthContext';
 import { useToast } from './ToastContext';
 import { DEFAULT_CATALOG } from './defaultCatalog';
@@ -178,8 +178,22 @@ export default function Admin() {
     try {
       const result = await generateImageWithAI({ title, desc });
       if (result.image) {
-        setImage(result.image);
-        showToast("AI 이미지가 생성되었습니다.", "success");
+        // 생성된 이미지(약 1.5MB data URL)는 Firestore 1MB 한도를 넘으므로
+        // Storage에 업로드하고 작은 다운로드 URL만 저장한다.
+        try {
+          const imgRef = ref(storage, `catalog-images/${id || "ai"}-${Date.now()}.png`);
+          await uploadString(imgRef, result.image, "data_url");
+          const url = await getDownloadURL(imgRef);
+          setImage(url);
+          showToast("AI 이미지를 생성해 Storage에 저장했습니다.", "success");
+        } catch (upErr) {
+          console.warn("Storage 업로드 실패, data URL 미리보기로 표시.", upErr);
+          setImage(result.image);
+          showToast(
+            "이미지는 생성됐지만 Storage 업로드에 실패했습니다. (Storage 활성화/관리자 로그인 필요 — 이 상태로 저장 시 Firestore 한도 초과 가능)",
+            "error"
+          );
+        }
       }
     } catch (err) {
       showToast(err.message || "이미지 생성에 실패했습니다.", "error");
