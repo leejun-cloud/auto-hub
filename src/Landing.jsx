@@ -4,7 +4,8 @@ import { db, auth } from './firebase';
 import { collection, getDocs, addDoc, query, where } from 'firebase/firestore';
 import { useLanguage } from './LanguageContext';
 import { useToast } from './ToastContext';
-import { DEFAULT_CATALOG } from './defaultCatalog';
+import { DEFAULT_CATALOG, DEPRECATED_MOCK_PRODUCT_IDS } from './defaultCatalog';
+import { SOURCE_SUBSCRIPTION, formatWon } from './paymentConfig';
 
 const withTimeout = (promise, ms = 1000) => {
   return Promise.race([
@@ -42,7 +43,7 @@ export default function Landing() {
         });
       } catch { /* ignore */ }
 
-      setCatalog(Object.values(merged));
+      setCatalog(Object.values(merged).filter((item) => !item.deleted && !DEPRECATED_MOCK_PRODUCT_IDS.includes(item.id)));
     };
     fetchCatalog();
   }, []);
@@ -124,6 +125,7 @@ export default function Landing() {
 
   const sourceCodes = catalog.filter(p => p.type === '소스코드');
   const aiEmployees = catalog.filter(p => p.type === 'AI 직원');
+  const skills = catalog.filter(p => p.type === '스킬');
 
   return (
     <div className="bg-background text-on-background overflow-hidden">
@@ -191,6 +193,21 @@ export default function Landing() {
         viewMore={t.viewMore}
         onViewMore={() => navigate('/catalog')}
         products={sourceCodes.slice(0, 3)}
+        onCheckout={handleCheckout}
+        formatPrice={formatPrice}
+        t={t}
+        lang={lang}
+      />
+
+      {/* ===== Skills Section ===== */}
+      <ProductSection
+        icon="extension"
+        iconColor="text-tertiary"
+        title={t.secSkillTitle}
+        desc={t.secSkillDesc}
+        viewMore={t.viewMore}
+        onViewMore={() => navigate('/catalog')}
+        products={skills.slice(0, 3)}
         onCheckout={handleCheckout}
         formatPrice={formatPrice}
         t={t}
@@ -287,7 +304,8 @@ function ProductSection({ icon, iconColor, title, desc, viewMore, onViewMore, pr
 
 function ProductCard({ product, onCheckout, formatPrice, t, lang }) {
   const isFree = product.price === 0 || product.method === 'Free Promo';
-  const badgeText = isFree ? (lang === 'ko' ? '무료' : 'Free') : (product.type === '소스코드' ? 'Source Code' : 'New');
+  const isSourceSubscription = product.type === '소스코드' && !isFree;
+  const badgeText = isFree ? (lang === 'ko' ? '무료' : 'Free') : (product.type === '소스코드' ? 'Source Code' : (product.type === '스킬' ? 'Skill' : 'New'));
   const badgeColor = isFree ? 'bg-secondary/10 text-secondary' : 'bg-primary/10 text-primary';
   const localizedTitle = lang === 'en' && product.title_en ? product.title_en : product.title;
   const localizedDesc = lang === 'ko' && product.desc_ko ? product.desc_ko : product.desc;
@@ -312,16 +330,22 @@ function ProductCard({ product, onCheckout, formatPrice, t, lang }) {
         </p>
       </div>
       <div className="flex items-center justify-between mt-auto pt-2">
-        <span className="font-headline-md text-headline-md font-bold">{formatPrice(product.price)}</span>
+        <span className="font-headline-md text-headline-md font-bold">
+          {isSourceSubscription ? formatWon(SOURCE_SUBSCRIPTION.amount) : formatPrice(product.price)}{isSourceSubscription ? <span className="text-sm font-semibold text-on-surface-variant ml-1">{t.monthlySuffix}</span> : null}
+        </span>
         <button
           onClick={(e) => {
             e.stopPropagation();
+            if (isSourceSubscription) {
+              navigate(`/checkout?productId=${SOURCE_SUBSCRIPTION.productId}`);
+              return;
+            }
             onCheckout(product.id, isFree);
           }}
           className="bg-primary text-on-primary font-label-md text-label-md px-6 py-3 rounded-xl hover:opacity-90 active:scale-95 transition-all btn-animate inline-flex items-center gap-1.5"
         >
-          <span className="material-symbols-outlined text-[18px]">{isFree ? 'download' : 'shopping_cart'}</span>
-          {isFree ? (lang === 'ko' ? '무료 다운로드' : 'Download Free') : (lang === 'ko' ? '구매하기' : 'Buy Now')}
+          <span className="material-symbols-outlined text-[18px]">{isFree ? 'download' : (isSourceSubscription ? 'credit_card' : 'shopping_cart')}</span>
+          {isFree ? t.downloadFree : (isSourceSubscription ? t.viewSubscription : t.buyNow)}
         </button>
       </div>
     </div>

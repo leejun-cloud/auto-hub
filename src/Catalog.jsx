@@ -4,7 +4,8 @@ import { db, auth } from './firebase';
 import { collection, getDocs, addDoc, query, where } from 'firebase/firestore';
 import { useLanguage } from './LanguageContext';
 import { useToast } from './ToastContext';
-import { DEFAULT_CATALOG } from './defaultCatalog';
+import { DEFAULT_CATALOG, DEPRECATED_MOCK_PRODUCT_IDS } from './defaultCatalog';
+import { SOURCE_SUBSCRIPTION, formatWon } from './paymentConfig';
 
 // Prevent Firestore from hanging indefinitely if offline
 const withTimeout = (promise, ms = 1000) => {
@@ -47,7 +48,7 @@ export default function Catalog() {
         });
       } catch { /* ignore */ }
 
-      setCatalog(Object.values(merged));
+      setCatalog(Object.values(merged).filter((item) => !item.deleted && !DEPRECATED_MOCK_PRODUCT_IDS.includes(item.id)));
     };
     fetchCatalog();
   }, []);
@@ -170,6 +171,19 @@ export default function Catalog() {
         </div>
       </section>
 
+      {/* Skills Section */}
+      <section className="mb-16">
+        <h2 className="font-headline-lg text-headline-lg mb-8 font-bold flex items-center gap-2">
+          <span className="material-symbols-outlined text-[28px] text-tertiary">extension</span>
+          Skill Packs
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {filteredCatalog.filter(p => p.type === '스킬').map(product => (
+            <ProductCard key={product.id} product={product} onCheckout={handleCheckout} formatPrice={formatPrice} t={t} lang={lang} />
+          ))}
+        </div>
+      </section>
+
       {/* AI Employees Section */}
       <section className="mb-16">
         <h2 className="font-headline-lg text-headline-lg mb-8 font-bold flex items-center gap-2">
@@ -188,7 +202,8 @@ export default function Catalog() {
 
 function ProductCard({ product, onCheckout, formatPrice, t, lang }) {
   const isFree = product.price === 0 || product.method === 'Free Promo';
-  const badgeText = isFree ? (lang === 'ko' ? '무료' : 'Free') : (product.type === '소스코드' ? 'Source Code' : 'New');
+  const isSourceSubscription = product.type === '소스코드' && !isFree;
+  const badgeText = isFree ? (lang === 'ko' ? '무료' : 'Free') : (product.type === '소스코드' ? 'Source Code' : (product.type === '스킬' ? 'Skill' : 'New'));
   const badgeColor = isFree ? 'bg-secondary/10 text-secondary' : 'bg-primary/10 text-primary';
   const localizedTitle = lang === 'en' && product.title_en ? product.title_en : product.title;
   const localizedDesc = lang === 'ko' && product.desc_ko ? product.desc_ko : product.desc;
@@ -213,15 +228,21 @@ function ProductCard({ product, onCheckout, formatPrice, t, lang }) {
         </p>
       </div>
       <div className="flex items-center justify-between mt-auto">
-        <span className="font-headline-md text-headline-md font-bold">{formatPrice(product.price)}</span>
+        <span className="font-headline-md text-headline-md font-bold">
+          {isSourceSubscription ? formatWon(SOURCE_SUBSCRIPTION.amount) : formatPrice(product.price)}{isSourceSubscription ? <span className="text-sm font-semibold text-on-surface-variant ml-1">{t.monthlySuffix}</span> : null}
+        </span>
         <button 
           onClick={(e) => {
             e.stopPropagation();
+            if (isSourceSubscription) {
+              navigate(`/checkout?productId=${SOURCE_SUBSCRIPTION.productId}`);
+              return;
+            }
             onCheckout(product.id, isFree);
-          }} 
+          }}
           className="bg-primary text-on-primary font-label-md text-label-md px-6 py-3 rounded-xl hover:opacity-90 active:scale-95 transition-all btn-animate"
         >
-          {isFree ? (lang === 'ko' ? '무료 다운로드' : 'Download Free') : (lang === 'ko' ? '구매하기' : 'Buy Now')}
+          {isFree ? t.downloadFree : (isSourceSubscription ? t.viewSubscription : t.buyNow)}
         </button>
       </div>
     </div>

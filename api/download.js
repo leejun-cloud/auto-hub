@@ -3,6 +3,7 @@
 // 1) ID 토큰으로 사용자 검증  2) Firestore libraries 에서 보유 여부 확인  3) 단기 서명 URL 반환.
 
 import { verifyUid, getDb, getBucket } from "./_admin.js";
+import { SOURCE_SUBSCRIPTION_PRODUCT_ID } from "./_paymentConfig.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -25,7 +26,8 @@ export default async function handler(req, res) {
     const uid = await verifyUid(idToken);
 
     // 2) 보유 여부 확인 (구매 또는 무료 발급 모두 허용)
-    const snap = await getDb()
+    const db = getDb();
+    const snap = await db
       .collection("libraries")
       .where("userId", "==", uid)
       .where("productId", "==", productId)
@@ -33,8 +35,16 @@ export default async function handler(req, res) {
       .get();
 
     if (snap.empty) {
-      res.status(403).json({ error: "이 상품을 보유하고 있지 않습니다. (구매 후 다운로드 가능)" });
-      return;
+      const subscriptionDoc = await db.collection("libraries").doc(`${uid}_${SOURCE_SUBSCRIPTION_PRODUCT_ID}`).get();
+      const subscription = subscriptionDoc.exists ? subscriptionDoc.data() : null;
+      const hasActiveSourceSubscription =
+        subscription?.status === "active" &&
+        (!subscription.expiresAt || subscription.expiresAt > Date.now());
+
+      if (!hasActiveSourceSubscription) {
+        res.status(403).json({ error: "활성 구독권이 없습니다. 구독 후 다운로드 가능합니다." });
+        return;
+      }
     }
 
     // 3) Storage 객체 존재 확인 + 단기 서명 URL 발급

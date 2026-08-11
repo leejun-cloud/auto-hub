@@ -58,3 +58,8 @@ export async function verifyUid(idToken) {
   const decoded = await getAdmin().auth().verifyIdToken(idToken);
   return decoded.uid;
 }
+
+export async function verifyDecodedToken(idToken) {
+  if (!idToken) throw new Error("로그인이 필요합니다.");
+  return getAdmin().auth().verifyIdToken(idToken);
+}
