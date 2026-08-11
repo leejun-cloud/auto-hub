@@ -18,7 +18,7 @@ import crypto from "crypto";
 import { getDb, getBucket } from "./_admin.js";
 
 const SOURCE = "auto-toolkit";
-const MAX_ZIP_BYTES = 8 * 1024 * 1024; // 디코딩 후 안전 상한 (Vercel 본문 한계 고려)
+const MAX_ZIP_BYTES = 100 * 1024 * 1024; // 디코딩 후 안전 상한
 
 // 구독 플랜과 동일하게 다루기 위한 값. 프론트는 (type === '소스코드' && price !== 0)일 때
 // 소스 구독 상품으로 인식하므로, 구독형 도구는 반드시 이 형태여야 한다.
@@ -109,6 +109,25 @@ export function mapToCatalogDoc(manifest, extra = {}) {
   return doc;
 }
 
+// 큰 ZIP은 Vercel 함수 body 한계(~4.5MB)를 우회하기 위해 Storage에 직접(signed URL) 올리고,
+// 여기서는 그 결과(size/sha256)만 받아 catalog 문서를 upsert 한다.
+async function handleUploadUrl(req, res) {
+  const body = parseBody(req);
+  const id = body.id;
+  if (!id) {
+    res.status(400).json({ error: "id 가 필요합니다." });
+    return;
+  }
+  const storagePath = `products/${id}.zip`;
+  const [url] = await getBucket().file(storagePath).getSignedUrl({
+    version: "v4",
+    action: "write",
+    expires: Date.now() + 10 * 60 * 1000, // 10분
+    contentType: "application/zip",
+  });
+  res.status(200).json({ ok: true, id, url, storagePath, contentType: "application/zip" });
+}
+
 async function handleUpsert(req, res) {
   const body = parseBody(req);
   const tool = body.tool || {};
@@ -118,46 +137,56 @@ async function handleUpsert(req, res) {
     return;
   }
   const id = manifest.id;
+  const storagePath = `products/${id}.zip`;
 
-  if (!tool.zipBase64) {
-    res.status(400).json({ error: `${id}: zipBase64 가 없습니다.` });
-    return;
-  }
+  let size = tool.size || 0;
 
-  let buf;
-  try {
-    buf = Buffer.from(tool.zipBase64, "base64");
-  } catch {
-    res.status(400).json({ error: `${id}: zipBase64 디코딩 실패.` });
-    return;
-  }
-  if (buf.length > MAX_ZIP_BYTES) {
-    res.status(413).json({ error: `${id}: ZIP이 너무 큽니다 (${buf.length} bytes).` });
-    return;
-  }
-
-  // 무결성 검증 (선택): 빌더가 보낸 sha256 과 비교
-  if (tool.sha256) {
-    const digest = crypto.createHash("sha256").update(buf).digest("hex");
-    if (digest !== tool.sha256) {
-      res.status(400).json({ error: `${id}: sha256 불일치 (전송 손상 가능).` });
+  if (tool.zipBase64) {
+    // 하위 호환: 작은 ZIP은 base64로 직접 받아 업로드.
+    let buf;
+    try {
+      buf = Buffer.from(tool.zipBase64, "base64");
+    } catch {
+      res.status(400).json({ error: `${id}: zipBase64 디코딩 실패.` });
       return;
     }
+    if (buf.length > MAX_ZIP_BYTES) {
+      res.status(413).json({ error: `${id}: ZIP이 너무 큽니다 (${buf.length} bytes).` });
+      return;
+    }
+    if (tool.sha256) {
+      const digest = crypto.createHash("sha256").update(buf).digest("hex");
+      if (digest !== tool.sha256) {
+        res.status(400).json({ error: `${id}: sha256 불일치 (전송 손상 가능).` });
+        return;
+      }
+    }
+    await getBucket().file(storagePath).save(buf, {
+      contentType: "application/zip",
+      resumable: false,
+      metadata: { metadata: { source: SOURCE, syncedAt: String(Date.now()) } },
+    });
+    size = buf.length;
+  } else {
+    // signed URL 로 이미 업로드된 상태 — Storage에 실제로 존재하고 크기가 맞는지 확인.
+    const [exists] = await getBucket().file(storagePath).exists();
+    if (!exists) {
+      res.status(400).json({ error: `${id}: ${storagePath} 가 Storage에 없습니다 (upload-url 단계 먼저 필요).` });
+      return;
+    }
+    const [meta] = await getBucket().file(storagePath).getMetadata();
+    const actualSize = Number(meta.size || 0);
+    if (tool.size && actualSize !== tool.size) {
+      res.status(400).json({ error: `${id}: 업로드된 크기(${actualSize})가 전송값(${tool.size})과 다릅니다.` });
+      return;
+    }
+    size = actualSize;
   }
 
-  // 1) Storage 업로드 (products/{id}.zip)
-  const storagePath = `products/${id}.zip`;
-  await getBucket().file(storagePath).save(buf, {
-    contentType: "application/zip",
-    resumable: false,
-    metadata: { metadata: { source: SOURCE, syncedAt: String(Date.now()) } },
-  });
-
-  // 2) catalog/{id} upsert
-  const doc = mapToCatalogDoc(manifest, { size: buf.length, readme: tool.readme });
+  const doc = mapToCatalogDoc(manifest, { size, readme: tool.readme });
   await getDb().collection("catalog").doc(id).set(doc, { merge: true });
 
-  res.status(200).json({ ok: true, id, bytes: buf.length });
+  res.status(200).json({ ok: true, id, bytes: size });
 }
 
 async function handleFinalize(req, res) {
@@ -214,6 +243,8 @@ export default async function handler(req, res) {
     const phase = body.phase || "upsert";
     if (phase === "finalize") {
       await handleFinalize(req, res);
+    } else if (phase === "upload-url") {
+      await handleUploadUrl(req, res);
     } else if (phase === "upsert") {
       await handleUpsert(req, res);
     } else {
