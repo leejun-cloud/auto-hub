@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useLanguage } from './LanguageContext';
 import { useToast } from './ToastContext';
-import { DEFAULT_CATALOG } from './defaultCatalog';
+import { DEFAULT_CATALOG, DEPRECATED_MOCK_PRODUCT_IDS } from './defaultCatalog';
 import { db, auth } from './firebase';
-import { collection, getDocs, addDoc, query, where } from 'firebase/firestore';
+import { collection, getDocs, addDoc, query, where, doc, getDoc } from 'firebase/firestore';
+import { SOURCE_SUBSCRIPTION, formatWon } from './paymentConfig';
 
 // Prevents Firestore from hanging indefinitely if offline
 const withTimeout = (promise, ms = 1000) => {
@@ -120,6 +121,7 @@ export default function Detail() {
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isOwned, setIsOwned] = useState(false);
+  const [downloadProcessing, setDownloadProcessing] = useState(false);
 
   // ----------------------------------------------------
   // States for Playground: AI Documenter (ai-documenter)
@@ -146,6 +148,7 @@ export default function Detail() {
   // States for Playground: AI Blog Writer (blog-writer)
   // ----------------------------------------------------
   const [keyword, setKeyword] = useState('');
+  const [originalScript, setOriginalScript] = useState('');
   const [tone, setTone] = useState('friendly');
   const [blogGenerating, setBlogGenerating] = useState(false);
   const [blogStep, setBlogStep] = useState(0);
@@ -155,11 +158,45 @@ export default function Detail() {
   const [generatedTags, setGeneratedTags] = useState([]);
 
   const blogSteps = [
-    { label: "키워드 기반 검색 동향 및 제목 후보군 추출 중...", icon: "search" },
-    { label: "포스팅 개요(Outline) 구성 및 소제목 리스트 생성 중...", icon: "assignment" },
-    { label: "선택된 문체에 최적화된 본문 스토리텔링 살 붙이는 중...", icon: "edit_note" },
-    { label: "가독성을 위한 퇴고 작업 및 핵심 해시태그 추출 중...", icon: "done_all" }
+    { label: "주제와 독자를 확인하는 중...", icon: "search" },
+    { label: "짧은 글 구조를 잡는 중...", icon: "assignment" },
+    { label: "선택한 톤으로 본문을 쓰는 중...", icon: "edit_note" },
+    { label: "문장을 다듬고 태그를 정리하는 중...", icon: "done_all" }
   ];
+
+  const buildSimpleBlogPost = (topic, selectedTone) => {
+    const compactTopic = topic.replace(/\s+/g, '');
+    const toneCopy = {
+      friendly: {
+        title: `${topic}이 필요한 분들에게 알려드려요`,
+        body:
+          `${topic}은 블로그, 카페, 홈페이지 공지처럼 고객에게 설명해야 하는 글을 자주 쓰는 분들에게 특히 잘 맞습니다.\n\n` +
+          `사용 방법은 간단합니다. 알리고 싶은 주제나 판매하려는 서비스 이름을 입력하면, 독자가 누구인지와 어떤 상황에서 필요한지를 먼저 정리한 뒤 게시글 초안을 만들어 줍니다.\n\n` +
+          `완성된 글은 그대로 올리기보다 매장명, 가격, 상담 방법처럼 실제 고객이 확인해야 할 정보만 덧붙이면 더 자연스럽게 사용할 수 있습니다.`
+      },
+      professional: {
+        title: `${topic} 활용 대상과 실제 운영 방식`,
+        body:
+          `${topic}은 상품 소개, 서비스 안내, 운영 공지, 마케팅 게시글을 반복 작성해야 하는 실무자에게 적합하다.\n\n` +
+          `운영자는 핵심 주제, 대상 고객, 전달해야 할 혜택을 입력하고 생성된 초안을 검토한다. 이후 실제 조건, 문의 경로, 브랜드 표현만 보완하면 게시판이나 블로그에 바로 등록할 수 있다.\n\n` +
+          `이 방식은 글쓰기 시간을 줄이는 동시에 누가 읽는 글인지, 어떤 행동을 유도해야 하는지 분명하게 유지하는 데 목적이 있다.`
+      },
+      review: {
+        title: `${topic} 게시글 작성에 써본 느낌`,
+        body:
+          `${topic}은 글을 처음부터 쓰기 어려운 운영자나 마케팅 담당자가 초안을 잡을 때 쓰기 좋았습니다.\n\n` +
+          `주제만 넣으면 독자에게 왜 필요한지, 어떤 상황에서 쓰는지, 어떻게 문의하거나 구매하면 되는지 순서대로 정리해 줍니다.\n\n` +
+          `다만 실제 게시 전에는 우리 매장이나 서비스에 맞는 표현, 연락처, 혜택 조건을 한 번 더 넣어야 훨씬 자연스럽습니다.`
+      }
+    };
+
+    const copy = toneCopy[selectedTone] || toneCopy.friendly;
+    return {
+      title: copy.title,
+      body: copy.body,
+      tags: [`#${compactTopic}`, '#업무자동화', '#AI활용', '#AutoHub']
+    };
+  };
 
   // ----------------------------------------------------
   // States for Playground: DB Backup Script (database-backup)
@@ -178,8 +215,34 @@ export default function Detail() {
     const fetchProductDetails = async () => {
       setLoading(true);
       try {
-        const found = DEFAULT_CATALOG.find(p => p.id === productId);
-        const targetProduct = found || DEFAULT_CATALOG[0];
+        if (DEPRECATED_MOCK_PRODUCT_IDS.includes(productId)) {
+          showToast("삭제된 상품입니다.", "error");
+          navigate("/catalog");
+          return;
+        }
+        let targetProduct = DEFAULT_CATALOG.find(p => p.id === productId);
+        try {
+          const productSnap = await withTimeout(getDoc(doc(db, "catalog", productId)));
+          if (productSnap.exists()) {
+            targetProduct = { ...targetProduct, id: productSnap.id, ...productSnap.data() };
+          }
+        } catch (e) {
+          console.warn("Firestore product load failed, checking local overrides.", e);
+        }
+        try {
+          const localCustom = JSON.parse(localStorage.getItem("autohub_custom_catalog") || "{}");
+          if (localCustom[productId]) targetProduct = { ...targetProduct, ...localCustom[productId] };
+        } catch { /* ignore */ }
+        if (targetProduct?.deleted) {
+          showToast("삭제된 상품입니다.", "error");
+          navigate("/catalog");
+          return;
+        }
+        if (!targetProduct) {
+          showToast("상품을 찾을 수 없습니다.", "error");
+          navigate("/catalog");
+          return;
+        }
         setProduct(targetProduct);
 
         const user = auth.currentUser;
@@ -194,6 +257,18 @@ export default function Detail() {
           );
           const snap = await withTimeout(getDocs(q));
           owned = !snap.empty;
+          if (!owned && targetProduct.type === '소스코드') {
+            const subQ = query(
+              collection(db, "libraries"),
+              where("userId", "==", userUid),
+              where("productId", "==", SOURCE_SUBSCRIPTION.productId)
+            );
+            const subSnap = await withTimeout(getDocs(subQ));
+            owned = subSnap.docs.some((docSnap) => {
+              const data = docSnap.data();
+              return data.status === "active" && (!data.expiresAt || data.expiresAt > Date.now());
+            });
+          }
         } catch (e) {
           const localLibs = JSON.parse(localStorage.getItem("autohub_libraries") || "[]");
           owned = localLibs.some(lib => lib.userId === userUid && lib.productId === targetProduct.id);
@@ -211,6 +286,7 @@ export default function Detail() {
     setShowDocResult(false);
     setDocGenerating(false);
     setKeyword('');
+    setOriginalScript('');
     setShowBlogResult(false);
     setBlogGenerating(false);
     setScriptGenerated(false);
@@ -222,8 +298,11 @@ export default function Detail() {
 
   const handleCheckout = async () => {
     const isFree = product.price === 0;
+    const isSourceSubscriptionProduct = product.type === '소스코드' && !isFree;
     if (isFree) {
       await processPayment("Free Promo");
+    } else if (isSourceSubscriptionProduct) {
+      navigate(`/checkout?productId=${SOURCE_SUBSCRIPTION.productId}`);
     } else {
       setShowCheckoutModal(true);
     }
@@ -260,6 +339,55 @@ export default function Detail() {
       showToast("오류가 발생했습니다.", "error");
     } finally {
       setCheckoutProcessing(false);
+    }
+  };
+
+  const handleDownload = async () => {
+    if (!product || downloadProcessing) return;
+
+    const productId = product.id;
+    setDownloadProcessing(true);
+    showToast(`"${product.title}" 다운로드 준비 중...`, "info");
+
+    if ((product.downloadType === "public" || !product.storagePath) && product.zipUrl) {
+      const link = document.createElement("a");
+      link.href = product.zipUrl;
+      link.target = "_blank";
+      link.rel = "noreferrer";
+      link.download = `${productId}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      showToast(`"${product.title}" 다운로드를 시작합니다.`, "success");
+      setDownloadProcessing(false);
+      return;
+    }
+
+    try {
+      if (!auth.currentUser) {
+        showToast("다운로드하려면 로그인이 필요합니다.", "error");
+        return;
+      }
+
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch("/api/download", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken, productId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast(data.error || `다운로드 실패 (${res.status})`, "error");
+        return;
+      }
+
+      window.location.href = data.url;
+      showToast(`"${product.title}" 다운로드를 시작합니다.`, "success");
+    } catch (err) {
+      console.error(err);
+      showToast("다운로드 처리 중 오류가 발생했습니다.", "error");
+    } finally {
+      setDownloadProcessing(false);
     }
   };
 
@@ -370,8 +498,11 @@ ${projectData.endpoints.map(ep => `- **${ep.method}** ${ep.path} : ${ep.desc}`).
   // Blog Writer Logic
   // ----------------------------------------------------
   const startBlogGeneration = () => {
-    if (!keyword.trim()) {
-      showToast("블로그 주제 또는 키워드를 기입해 주세요.", "warning");
+    const cleanKeyword = keyword.trim();
+    const cleanOriginalScript = originalScript.trim();
+
+    if (!cleanKeyword && !cleanOriginalScript) {
+      showToast("블로그 주제 또는 기존 원고를 기입해 주세요.", "warning");
       return;
     }
     setBlogGenerating(true);
@@ -383,19 +514,21 @@ ${projectData.endpoints.map(ep => `- **${ep.method}** ${ep.path} : ${ep.desc}`).
         if (prev >= blogSteps.length - 1) {
           clearInterval(interval);
           setTimeout(() => {
-            setGeneratedTitle(`[AI 작성] ${keyword} 도입 가이드 및 효율 극대화 비법`);
-            setGeneratedBody(
-              `안녕하세요! 오늘은 최근 많은 분들이 높은 관심을 가지고 질문해 주고 계시는 [${keyword}]에 대해 심도 깊게 다뤄보고자 합니다.\n\n` +
-              `많은 실무 현장에서 [${keyword}]의 중요성을 인지하면서도, 막상 도입 단계에 이르면 어디서부터 어떻게 손을 대야 할지 난감해하곤 합니다. 본 에이전트 분석 결과, 가장 안정적이고 빠른 실행을 유도하는 최적의 3단계 가이드를 공유해 드립니다.\n\n` +
-              `1. 명확한 목표 설정 및 프로세스 맵 작성\n` +
-              `2. 소규모 파일럿 프로젝트 검증 및 피드백 수렴\n` +
-              `3. 전체 워크플로우 확대 적용 및 지속적 고도화\n\n` +
-              `특히 이번 포스팅에서 사용된 가이드는 전문가 그룹이 실전 노하우로 설계하여 신뢰도를 한 차원 더 높였습니다. 추가 문의사항이나 프로젝트 원본 템플릿이 필요하시면 언제든 댓글로 남겨 주세요. 감사합니다!`
-            );
-            setGeneratedTags([`#${keyword.replace(/\s+/g, '')}`, '#자동화도입', '#업무효율화', '#AI블로그마케터', '#AutoHub']);
+            const resultKeyword = cleanKeyword || "업로드 원고";
+
+            if (cleanOriginalScript) {
+              setGeneratedTitle(`[원문 그대로] ${resultKeyword}`);
+              setGeneratedBody(cleanOriginalScript);
+              setGeneratedTags([`#${resultKeyword.replace(/\s+/g, '')}`, '#원문유지', '#스크립트라이트', '#AutoHub']);
+            } else {
+              const post = buildSimpleBlogPost(resultKeyword, tone);
+              setGeneratedTitle(post.title);
+              setGeneratedBody(post.body);
+              setGeneratedTags(post.tags);
+            }
             setBlogGenerating(false);
             setShowBlogResult(true);
-            showToast("블로그 포스팅 작성이 완료되었습니다!", "success");
+            showToast(cleanOriginalScript ? "업로드 원고를 그대로 출력했습니다!" : "블로그 포스팅 작성이 완료되었습니다!", "success");
           }, 800);
           return prev;
         }
@@ -635,8 +768,36 @@ rm -f $BACKUP_FILE
     );
   }
 
-  const info = narratives[product.id] || narratives["ai-documenter"];
+  const genericInfo = {
+    eyebrow: `${product.type || "PRODUCT"} · AUTOHUB`,
+    heroHeadline: `${product.title}<br/><span class='text-[#0CA678]'>실제 운영에 바로 쓰는 상품입니다.</span>`,
+    heroDesc: product.desc || "등록된 상품 설명을 기준으로 사용 목적과 운영 방법을 안내합니다.",
+    situationDesc: `${product.title}은 반복 작업을 줄이고 실제 업무 흐름에 적용할 수 있도록 등록된 상품입니다. 사용자는 상품 설명, 첨부 파일, 매뉴얼을 확인한 뒤 자신의 환경에 맞게 설치하거나 실행하면 됩니다.`,
+    solutionTitle: "등록된 상품 정보와 파일을 기준으로 사용합니다.",
+    solutionDesc: "관리자가 저장한 설명, 기능, 매뉴얼, 다운로드 파일이 상세 페이지와 라이브러리에 그대로 반영됩니다.",
+    benefits: (Array.isArray(product.features) && product.features.length > 0 ? product.features : ["상품 설명 확인", "파일 다운로드", "운영 환경에 맞춘 적용"]).slice(0, 3).map((feature) => ({
+      title: feature,
+      desc: "관리자가 등록한 상품 기능입니다. 상세 조건은 설명과 매뉴얼을 함께 확인하세요."
+    })),
+    parts: [
+      { label: "PRODUCT FILE", title: "등록 파일", desc: "구매 또는 권한 확인 후 연결된 ZIP/소스 파일을 다운로드해 사용합니다." },
+      { label: "MANUAL", title: "운영 안내", desc: "상품 설명과 매뉴얼을 기준으로 설치, 실행, 커스터마이징 과정을 확인합니다." }
+    ],
+    steps: [
+      { title: "상품 설명 확인", desc: "제목, 설명, 기능, 지원 플랫폼을 확인합니다." },
+      { title: "구매 또는 권한 확인", desc: "무료 상품은 라이브러리에 추가하고, 유료 상품은 결제 또는 구독 권한을 확인합니다." },
+      { title: "파일 다운로드", desc: "라이브러리 또는 상세 페이지에서 등록된 ZIP 파일을 다운로드합니다." },
+      { title: "환경에 맞게 적용", desc: "매뉴얼의 설치·실행 안내를 따라 운영 환경에 적용합니다." }
+    ],
+    faqs: [
+      { q: "이 상품은 누구에게 필요한가요?", a: "반복 업무를 줄이거나 등록된 소스코드를 자신의 서비스 운영에 활용하려는 사용자에게 적합합니다." },
+      { q: "어떻게 사용하나요?", a: "상품 설명과 매뉴얼을 확인한 뒤 다운로드한 파일을 자신의 환경에 맞게 실행하거나 수정해 사용합니다." }
+    ]
+  };
+  const info = narratives[product.id] || genericInfo;
   const isFree = product.price === 0;
+  const isSourceSubscription = product.type === '소스코드' && !isFree;
+  const priceLabel = isSourceSubscription ? `${formatWon(SOURCE_SUBSCRIPTION.amount)}${t.monthlySuffix}` : formatPrice(product.price);
 
   return (
     <main className="bg-[#FAF9F5] w-full font-sans text-[#0A0F0D] antialiased">
@@ -654,8 +815,8 @@ rm -f $BACKUP_FILE
                 <div className="flex items-center gap-3">
                   <span className="material-symbols-outlined text-[28px]">credit_card</span>
                   <div>
-                    <h3 className="font-bold text-lg">결제 확인</h3>
-                    <p className="text-white/70 text-xs">토스페이먼츠 시뮬레이션</p>
+                    <h3 className="font-bold text-lg">{isSourceSubscription ? '구독 확인' : '결제 확인'}</h3>
+                    <p className="text-white/70 text-xs">결제 연동 점검용 시뮬레이션</p>
                   </div>
                 </div>
                 <button onClick={() => setShowCheckoutModal(false)} className="text-white/60 hover:text-white transition-colors">
@@ -677,7 +838,7 @@ rm -f $BACKUP_FILE
               <div className="space-y-3">
                 <div className="flex justify-between text-sm">
                   <span className="text-[#6B6E70]">상품 금액</span>
-                  <span className="font-bold text-[#0A0F0D]">{formatPrice(product.price)}</span>
+                  <span className="font-bold text-[#0A0F0D]">{priceLabel}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-[#6B6E70]">할인</span>
@@ -685,7 +846,7 @@ rm -f $BACKUP_FILE
                 </div>
                 <div className="border-t border-[#EAE6DE] pt-3 flex justify-between text-base">
                   <span className="font-bold text-[#0A0F0D]">총 결제 금액</span>
-                  <span className="font-extrabold text-[#0CA678] text-lg">{formatPrice(product.price)}</span>
+                  <span className="font-extrabold text-[#0CA678] text-lg">{priceLabel}</span>
                 </div>
               </div>
 
@@ -713,7 +874,7 @@ rm -f $BACKUP_FILE
                 {checkoutProcessing ? (
                   <><span className="material-symbols-outlined text-[18px] animate-spin">sync</span> 처리 중...</>
                 ) : (
-                  <><span className="material-symbols-outlined text-[18px]">lock</span> {formatPrice(product.price)} 결제하기</>
+                  <><span className="material-symbols-outlined text-[18px]">lock</span> {isSourceSubscription ? `${priceLabel} 구독 시작` : `${priceLabel} 결제하기`}</>
                 )}
               </button>
             </div>
@@ -754,27 +915,23 @@ rm -f $BACKUP_FILE
 
             <div className="pt-4 flex flex-col sm:flex-row gap-4">
               {isOwned ? (
-                <div className="inline-flex items-center gap-2 bg-[#0CA678]/10 border border-[#0CA678]/25 text-[#0CA678] font-bold px-8 py-4 rounded-xl text-sm justify-center">
-                  <span className="material-symbols-outlined">check_circle</span>
-                  소유 및 사용 가능 스킬
-                </div>
+                <button
+                  onClick={handleDownload}
+                  disabled={downloadProcessing}
+                  className="bg-[#0CA678] text-white font-bold px-8 py-4 rounded-xl shadow-lg hover:opacity-90 active:scale-95 transition-all text-sm flex items-center justify-center gap-2 btn-animate disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  <span className="material-symbols-outlined">{downloadProcessing ? 'sync' : 'download'}</span>
+                  {downloadProcessing ? "다운로드 준비 중..." : "ZIP 다운로드"}
+                </button>
               ) : (
                 <button 
                   onClick={handleCheckout} 
                   className="bg-[#0CA678] text-white font-bold px-8 py-4 rounded-xl shadow-lg hover:opacity-90 active:scale-95 transition-all text-sm flex items-center justify-center gap-2 btn-animate font-mono"
                 >
                   <span className="material-symbols-outlined">{product.price === 0 ? 'download' : 'credit_card'}</span>
-                  {product.price === 0 ? "무료 다운로드하여 라이브러리 추가" : `구매하기 (${formatPrice(product.price)})`}
+                  {product.price === 0 ? "무료 다운로드하여 라이브러리 추가" : (isSourceSubscription ? `구독 시작하기 (${priceLabel})` : `구매하기 (${priceLabel})`)}
                 </button>
               )}
-              
-              <a 
-                href="#workspace" 
-                className="bg-[#F5F3EF] border border-[#EAE6DE] text-[#0A0F0D] font-bold px-8 py-4 rounded-xl hover:bg-[#EAE6DE] transition-colors text-sm flex items-center justify-center gap-1.5"
-              >
-                <span className="material-symbols-outlined text-[18px]">play_circle</span>
-                실전 데모 체험하기
-              </a>
             </div>
           </div>
 
@@ -1264,6 +1421,17 @@ $ npm run build`}
                 </div>
 
                 <div>
+                  <label className="block text-xs font-bold text-[#6B6E70] mb-2 uppercase">업로드한 스크립트라이트 원문 그대로</label>
+                  <textarea
+                    value={originalScript}
+                    onChange={(e) => setOriginalScript(e.target.value)}
+                    placeholder="처음 요청한 원고가 있다면 여기에 붙여넣으세요. 입력된 내용은 수정 없이 그대로 결과 본문에 반영됩니다."
+                    rows={6}
+                    className="w-full border border-[#EAE6DE] bg-white rounded-xl py-3 px-4 text-sm leading-relaxed focus:ring-2 focus:ring-[#0CA678] focus:border-transparent outline-none transition-all resize-none"
+                  />
+                </div>
+
+                <div>
                   <label className="block text-xs font-bold text-[#6B6E70] mb-2 uppercase">글쓰기 톤앤매너 선택</label>
                   <select 
                     value={tone}
@@ -1278,8 +1446,8 @@ $ npm run build`}
 
                 <button 
                   onClick={startBlogGeneration}
-                  disabled={!keyword.trim() || blogGenerating}
-                  className={`w-full py-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all ${keyword.trim() && !blogGenerating ? 'bg-[#0CA678] text-white hover:opacity-95 shadow-md active:scale-98' : 'bg-[#EAE6DE] text-[#8B928E] cursor-not-allowed'}`}
+                  disabled={(!keyword.trim() && !originalScript.trim()) || blogGenerating}
+                  className={`w-full py-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all ${(keyword.trim() || originalScript.trim()) && !blogGenerating ? 'bg-[#0CA678] text-white hover:opacity-95 shadow-md active:scale-98' : 'bg-[#EAE6DE] text-[#8B928E] cursor-not-allowed'}`}
                 >
                   <span className="material-symbols-outlined text-[18px]">edit_note</span>
                   AI 블로그 포스팅 원고 집필
@@ -1312,7 +1480,7 @@ $ npm run build`}
                     <span className="material-symbols-outlined text-[48px] text-[#8B928E]/30 mb-2">auto_stories</span>
                     <strong className="block text-sm font-bold text-[#0A0F0D]">완성된 마케팅 포스팅 원고</strong>
                     <span className="text-xs text-[#8B928E] max-w-[280px] mt-1 block">
-                      왼쪽 주제 입력칸에 단어들을 적고 [AI 블로그 포스팅 원고 집필]을 클릭해 보세요.
+                      왼쪽 주제 입력칸 또는 원문 입력란을 채우고 [AI 블로그 포스팅 원고 집필]을 클릭해 보세요.
                     </span>
                   </div>
                 )}
@@ -1504,18 +1672,74 @@ $ npm run build`}
                 </div>
 
                 <button 
-                  onClick={handleCheckout}
-                  disabled={isOwned}
-                  className={`w-full max-w-sm mx-auto py-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all ${isOwned ? 'bg-[#0CA678]/10 border border-[#0CA678]/25 text-[#0CA678] cursor-default' : 'bg-[#0CA678] text-white hover:opacity-95 shadow-md active:scale-[0.98]'}`}
+                  onClick={isOwned ? handleDownload : handleCheckout}
+                  disabled={downloadProcessing}
+                  className={`w-full max-w-sm mx-auto py-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all disabled:opacity-60 disabled:cursor-not-allowed ${isOwned ? 'bg-[#0CA678] text-white hover:opacity-95 shadow-md active:scale-[0.98]' : 'bg-[#0CA678] text-white hover:opacity-95 shadow-md active:scale-[0.98]'}`}
                 >
-                  <span className="material-symbols-outlined text-[18px]">{isOwned ? 'check_circle' : (product.price === 0 ? 'download' : 'credit_card')}</span>
-                  {isOwned ? '소유 완료 · 라이브러리에서 확인' : (product.price === 0 ? '무료 다운로드' : `구매하기 (${formatPrice(product.price)})`)}
+                  <span className="material-symbols-outlined text-[18px]">{isOwned ? (downloadProcessing ? 'sync' : 'download') : (product.price === 0 ? 'download' : 'credit_card')}</span>
+                  {isOwned ? (downloadProcessing ? '다운로드 준비 중...' : 'ZIP 다운로드') : (product.price === 0 ? '무료 다운로드' : (isSourceSubscription ? `구독 시작하기 (${priceLabel})` : `구매하기 (${priceLabel})`))}
                 </button>
               </div>
             </div>
           )}
         </div>
       </section>
+
+      {(product.manual || product.galleryImages || product.promptFiles) && (
+        <section className="px-6 py-20 bg-white border-y border-[#EAE6DE]">
+          <div className="max-w-[1100px] mx-auto space-y-10">
+            <div className="space-y-3">
+              <span className="inline-flex h-[26px] items-center rounded-[6px] bg-[#0CA678]/10 px-2.5 text-[11px] font-bold text-[#0CA678] uppercase">
+                AI Manual
+              </span>
+              <h2 className="font-extrabold text-[28px] md:text-[38px] text-[#0A0F0D] tracking-tight">
+                분석 기반 상세 매뉴얼
+              </h2>
+              <p className="text-[#6B6E70] text-[14px] md:text-[16px] max-w-[720px] leading-relaxed">
+                업로드된 ZIP 파일의 구조, 설정, 대표 소스코드를 바탕으로 생성된 설치·실행·커스터마이징 안내입니다.
+              </p>
+            </div>
+
+            {product.galleryImages?.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {product.galleryImages.map((item, index) => (
+                  <div key={index} className="rounded-[16px] border border-[#EAE6DE] overflow-hidden bg-[#FAF9F5]">
+                    <img src={item.url} alt={item.label || `매뉴얼 이미지 ${index + 1}`} className="w-full aspect-[3/2] object-cover" />
+                    <div className="px-4 py-3 text-[12px] font-bold text-[#3F4A45]">{item.label || `매뉴얼 이미지 ${index + 1}`}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {product.manual && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {Object.entries(product.manual).map(([key, value]) => (
+                  <article key={key} className="rounded-[16px] border border-[#EAE6DE] bg-[#FAF9F5] p-5">
+                    <h3 className="font-extrabold text-[14px] text-[#0CA678] uppercase mb-3">{key}</h3>
+                    <div className="text-[13px] leading-relaxed text-[#3F4A45] whitespace-pre-line">
+                      {String(value)}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+
+            {product.promptFiles && (
+              <div className="rounded-[16px] border border-[#EAE6DE] bg-[#FAF9F5] p-5">
+                <h3 className="font-extrabold text-[16px] text-[#0A0F0D] mb-4">함께 생성된 프롬프트 파일</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {Object.entries(product.promptFiles).map(([filename, content]) => (
+                    <details key={filename} className="rounded-xl border border-[#EAE6DE] bg-white p-4">
+                      <summary className="cursor-pointer text-[12px] font-bold text-[#0CA678]">{filename}</summary>
+                      <pre className="mt-3 max-h-60 overflow-auto whitespace-pre-wrap text-[11px] leading-relaxed text-[#3F4A45]">{String(content)}</pre>
+                    </details>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
 
       {/* ----------------------------------------------------
           FAQ Section (Inspired by skills.ag)
@@ -1557,7 +1781,7 @@ $ npm run build`}
           </h3>
           <ul className="list-disc pl-5 space-y-2 text-[#3F4A45] text-[13px] leading-relaxed">
             <li>전문가 검증을 통과하여 런타임 오류가 나지 않는 최적화 소스코드 자산입니다.</li>
-            <li>구매 및 무료 라이브러리에 보관하여 업데이트 버전을 원클릭으로 내려받으실 수 있습니다.</li>
+            <li>구독 또는 무료 라이브러리에 보관하여 활성 이용권 기준으로 업데이트 버전을 내려받으실 수 있습니다.</li>
             <li>문의나 고도화 건의는 마이페이지 연동 채널 또는 크리에이터 오픈 톡으로 즉각 반영해 드립니다.</li>
           </ul>
         </div>
